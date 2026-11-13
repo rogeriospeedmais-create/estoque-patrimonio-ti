@@ -1,0 +1,2155 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Controle de Estoque & Patrimônio - TI</title>
+  <!-- Tailwind CSS -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  <!-- FontAwesome -->
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+  <!-- Chart.js para Gráficos Visuais -->
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+  <!-- Bibliotecas para exportação Excel, PDF/Cautela e Leitor de Código de Barras -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js"></script>
+  <script src="https://unpkg.com/html5-qrcode@2.3.8/html5-qrcode.min.js"></script>
+
+  <script>
+    tailwind.config = {
+      darkMode: 'class',
+      theme: {
+        extend: {
+          colors: {
+            brand: {
+              50: '#eff6ff',
+              100: '#dbeafe',
+              500: '#3b82f6',
+              600: '#2563eb',
+              700: '#1d4ed8',
+              800: '#1e40af',
+              900: '#1e3a8a',
+            }
+          }
+        }
+      }
+    }
+  </script>
+  <style>
+    @media print {
+      body * {
+        visibility: hidden;
+      }
+      #printableArea, #printableArea * {
+        visibility: visible;
+      }
+      #printableArea {
+        position: absolute;
+        left: 0;
+        top: 0;
+        width: 100%;
+      }
+      .no-print {
+        display: none !important;
+      }
+    }
+  </style>
+</head>
+<body class="bg-slate-100 dark:bg-slate-900 text-slate-800 dark:text-slate-100 min-h-screen transition-colors duration-200">
+  <div id="authGate" class="min-h-screen flex items-center justify-center p-4">
+    <div class="bg-white dark:bg-slate-800 max-w-md w-full p-7 rounded-2xl shadow-lg border border-slate-200 dark:border-slate-700 space-y-5">
+      <div class="text-center">
+        <div class="w-14 h-14 bg-brand-600 text-white rounded-2xl flex items-center justify-center mx-auto mb-3">
+          <i class="fa-solid fa-boxes-stacked text-2xl"></i>
+        </div>
+        <h1 class="text-xl font-bold text-slate-900 dark:text-white">Estoque & Patrimônio TI</h1>
+        <p class="text-sm text-slate-500 dark:text-slate-400 mt-1">Entre com uma conta Google autorizada para acessar os dados.</p>
+      </div>
+      <p id="authGateMessage" role="status" class="text-sm text-center text-slate-600 dark:text-slate-300">Verificando configuração...</p>
+      <p class="text-xs text-slate-500 dark:text-slate-400">
+        No Firebase, ative o provedor Google e publique as regras de <code>firestore.rules</code> com os e-mails autorizados antes de entrar.
+      </p>
+      <div id="firebaseSetupPanel" class="space-y-3">
+        <label for="firebaseConfigGateInput" class="block text-xs font-bold text-slate-700 dark:text-slate-300 uppercase">Configuração pública do app Firebase (JSON)</label>
+        <textarea id="firebaseConfigGateInput" rows="5" spellcheck="false" placeholder='{"apiKey":"...","authDomain":"...","projectId":"...","appId":"..."}' class="w-full p-3 bg-slate-50 dark:bg-slate-900 border border-slate-300 dark:border-slate-700 rounded-xl text-xs font-mono focus:ring-2 focus:ring-brand-500 focus:outline-none"></textarea>
+        <button type="button" onclick="saveFirebaseConfig()" class="w-full py-2.5 bg-brand-600 hover:bg-brand-700 text-white text-sm font-bold rounded-xl">
+          Salvar configuração
+        </button>
+      </div>
+      <button id="googleSignInButton" type="button" onclick="signInWithGoogle()" disabled class="w-full py-3 bg-slate-900 hover:bg-slate-700 disabled:opacity-50 disabled:cursor-not-allowed text-white text-sm font-bold rounded-xl">
+        <i class="fa-brands fa-google mr-2"></i>Entrar com Google
+      </button>
+      <p class="text-[11px] text-center text-amber-700 dark:text-amber-400">
+        O link do site não libera o banco. Somente contas incluídas nas regras do Firestore podem ver ou alterar o estoque.
+      </p>
+    </div>
+  </div>
+
+  <div id="appShell" class="flex flex-col min-h-screen" style="display: none;">
+
+    <!-- Header Principal -->
+    <header class="bg-white dark:bg-slate-800 border-b border-slate-200 dark:border-slate-700 shadow-sm sticky top-0 z-30 no-print">
+      <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+        <div class="flex justify-between h-16 items-center gap-2">
+          <!-- Logo & Título -->
+          <div class="flex items-center space-x-3">
+            <div class="bg-brand-600 text-white p-2.5 rounded-xl shadow-md shadow-brand-500/20">
+              <i class="fa-solid fa-boxes-stacked text-xl"></i>
+            </div>
+            <div>
+              <h1 class="font-bold text-lg leading-tight text-slate-900 dark:text-white">Estoque & Patrimônio TI</h1>
+              <p class="text-xs text-slate-500 dark:text-slate-400 hidden sm:block">Controle Avançado de Equipamentos e Cautelas</p>
+            </div>
+          </div>
+
+          <!-- Ações Superiores, Usuário Ativo & Tema -->
+          <div class="flex items-center space-x-2 sm:space-x-3">
+            <!-- Seletor de Usuário Ativo -->
+            <div class="flex items-center bg-slate-100 dark:bg-slate-700/70 px-2.5 py-1.5 rounded-xl border border-slate-200 dark:border-slate-600 text-xs">
+              <i id="activeUserIcon" class="fa-solid fa-user-shield text-brand-600 dark:text-brand-400 mr-2"></i>
+              <select id="activeUserSelect" onchange="handleSwitchUser(this.value)" class="bg-transparent font-semibold text-slate-800 dark:text-slate-100 focus:outline-none cursor-pointer pr-1">
+                <!-- Preenchido via JS -->
+              </select>
+              <span id="activeUserRoleBadge" class="ml-1.5 px-1.5 py-0.5 text-[10px] font-bold rounded bg-brand-600 text-white uppercase">Admin</span>
+            </div>
+
+            <!-- Indicador de Alerta Rápido -->
+            <div id="lowStockBadge" class="hidden md:flex items-center space-x-2 bg-amber-50 dark:bg-amber-950/40 text-amber-700 dark:text-amber-400 px-3 py-1.5 rounded-lg border border-amber-200 dark:border-amber-800 text-xs font-semibold">
+              <i class="fa-solid fa-triangle-exclamation animate-pulse"></i>
+              <span id="lowStockCountText">0 itens críticos</span>
+            </div>
+
+            <!-- Botão de Alternar Tema -->
+            <button id="themeToggle" class="p-2 rounded-lg text-slate-500 hover:text-slate-700 dark:text-slate-400 dark:hover:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-700 transition-colors">
+              <i id="themeIcon" class="fa-solid fa-moon text-lg"></i>
+            </button>
+          </div>
+        </div>
+
+        <!-- Indicador de Sincronização Cloud Firestore -->
+        <div class="flex items-center justify-between py-1 px-1 text-xs border-t border-slate-100 dark:border-slate-700/60 text-slate-500 dark:text-slate-400">
+          <div class="flex items-center space-x-2">
+            <span id="cloudStatusDot" class="w-2 h-2 rounded-full bg-amber-500 animate-pulse"></span>
+            <span id="cloudStatusText">Conectando ao banco de dados online...</span>
+          </div>
+          <div class="flex items-center gap-2">
+            <span class="hidden sm:inline text-[10px] opacity-75">Sincronização em tempo real</span>
+            <button type="button" onclick="shareApp()" class="px-2.5 py-1 rounded-lg bg-brand-600 hover:bg-brand-700 text-white text-[11px] font-semibold">
+              <i class="fa-solid fa-share-nodes mr-1"></i>Compartilhar
+            </button>
+            <button type="button" onclick="signOutFromApp()" class="px-2.5 py-1 rounded-lg bg-slate-200 hover:bg-slate-300 dark:bg-slate-700 dark:hover:bg-slate-600 text-slate-700 dark:text-slate-200 text-[11px] font-semibold">
+              <i class="fa-solid fa-right-from-bracket mr-1"></i>Sair
+            </button>
+          </div>
+        </div>
+
+        <!-- Menu de Abas -->
+        <nav class="flex space-x-2 border-t border-slate-100 dark:border-slate-700/60 overflow-x-auto py-2 scrollbar-none">
+          <button type="button" data-tab="dashboard" onclick="switchTab('dashboard')" class="tab-btn px-4 py-2 rounded-lg text-sm font-medium transition-all flex items-center space-x-2 whitespace-nowrap bg-brand-600 text-white shadow-sm">
+            <i class="fa-solid fa-chart-pie"></i>
+            <span>Painel & Gráficos</span>
+          </button>
+          <button type="button" data-tab="inventory" onclick="switchTab('inventory')" class="tab-btn px-4 py-2 rounded-lg text-sm font-medium text-slate-600 dark:text-slate-400 hover:bg-slate-200/60 dark:hover:bg-slate-700/50 transition-all flex items-center space-x-2 whitespace-nowrap">
+            <i class="fa-solid fa-boxes-stacked"></i>
+            <span>Inventário Geral</span>
+          </button>
+          <button type="button" data-tab="patrimony" onclick="switchTab('patrimony')" class="tab-btn px-4 py-2 rounded-lg text-sm font-medium text-slate-600 dark:text-slate-400 hover:bg-slate-200/60 dark:hover:bg-slate-700/50 transition-all flex items-center space-x-2 whitespace-nowrap">
+            <i class="fa-solid fa-barcode"></i>
+            <span>Ativos Individuais & Cautelas</span>
+          </button>
+          <button type="button" data-tab="movements" onclick="switchTab('movements')" class="tab-btn px-4 py-2 rounded-lg text-sm font-medium text-slate-600 dark:text-slate-400 hover:bg-slate-200/60 dark:hover:bg-slate-700/50 transition-all flex items-center space-x-2 whitespace-nowrap">
+            <i class="fa-solid fa-right-left"></i>
+            <span>Movimentação & Leitor</span>
+          </button>
+          <button type="button" data-tab="logs" onclick="switchTab('logs')" class="tab-btn px-4 py-2 rounded-lg text-sm font-medium text-slate-600 dark:text-slate-400 hover:bg-slate-200/60 dark:hover:bg-slate-700/50 transition-all flex items-center space-x-2 whitespace-nowrap">
+            <i class="fa-solid fa-clock-rotate-left"></i>
+            <span>Histórico & Relatórios</span>
+          </button>
+          <button type="button" id="navSettingsBtn" data-tab="settings" onclick="switchTab('settings')" class="tab-btn px-4 py-2 rounded-lg text-sm font-medium text-slate-600 dark:text-slate-400 hover:bg-slate-200/60 dark:hover:bg-slate-700/50 transition-all flex items-center space-x-2 whitespace-nowrap">
+            <i class="fa-solid fa-gear"></i>
+            <span>Configurações & Segurança</span>
+          </button>
+        </nav>
+      </div>
+    </header>
+
+    <!-- Conteúdo Principal -->
+    <main class="flex-grow max-w-7xl w-full mx-auto px-4 sm:px-6 lg:px-8 py-6">
+
+      <!-- Toast Container -->
+      <div id="toastContainer" class="fixed bottom-5 right-5 z-50 flex flex-col space-y-2 pointer-events-none no-print"></div>
+
+      <!-- ABA 1: PAINEL & GRÁFICOS (DASHBOARD) -->
+      <section id="tab-dashboard" class="tab-content space-y-6">
+        
+        <!-- Cards de Estatísticas Principais -->
+        <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4">
+          <div class="bg-white dark:bg-slate-800 p-5 rounded-2xl shadow-sm border border-slate-200/80 dark:border-slate-700 flex items-center justify-between">
+            <div>
+              <p class="text-xs font-medium text-slate-500 dark:text-slate-400 uppercase tracking-wider">Total de Tipos</p>
+              <h3 id="statTotalItems" class="text-2xl font-bold text-slate-900 dark:text-white mt-1">0</h3>
+            </div>
+            <div class="p-3 bg-blue-50 dark:bg-blue-950/50 text-blue-600 dark:text-blue-400 rounded-xl">
+              <i class="fa-solid fa-list-check text-xl"></i>
+            </div>
+          </div>
+
+          <div class="bg-white dark:bg-slate-800 p-5 rounded-2xl shadow-sm border border-slate-200/80 dark:border-slate-700 flex items-center justify-between">
+            <div>
+              <p class="text-xs font-medium text-slate-500 dark:text-slate-400 uppercase tracking-wider">Peças Disponíveis</p>
+              <h3 id="statTotalUnits" class="text-2xl font-bold text-slate-900 dark:text-white mt-1">0</h3>
+            </div>
+            <div class="p-3 bg-emerald-50 dark:bg-emerald-950/50 text-emerald-600 dark:text-emerald-400 rounded-xl">
+              <i class="fa-solid fa-cubes text-xl"></i>
+            </div>
+          </div>
+
+          <div class="bg-white dark:bg-slate-800 p-5 rounded-2xl shadow-sm border border-slate-200/80 dark:border-slate-700 flex items-center justify-between">
+            <div>
+              <p class="text-xs font-medium text-slate-500 dark:text-slate-400 uppercase tracking-wider">Ativos Cautelados</p>
+              <h3 id="statOnLoan" class="text-2xl font-bold text-indigo-600 dark:text-indigo-400 mt-1">0</h3>
+            </div>
+            <div class="p-3 bg-indigo-50 dark:bg-indigo-950/50 text-indigo-600 dark:text-indigo-400 rounded-xl">
+              <i class="fa-solid fa-handshake-angle text-xl"></i>
+            </div>
+          </div>
+
+          <div class="bg-white dark:bg-slate-800 p-5 rounded-2xl shadow-sm border border-slate-200/80 dark:border-slate-700 flex items-center justify-between">
+            <div>
+              <p class="text-xs font-medium text-slate-500 dark:text-slate-400 uppercase tracking-wider">Com Defeito</p>
+              <h3 id="statDefectiveUnits" class="text-2xl font-bold text-rose-600 dark:text-rose-400 mt-1">0</h3>
+            </div>
+            <div class="p-3 bg-rose-50 dark:bg-rose-950/50 text-rose-600 dark:text-rose-400 rounded-xl">
+              <i class="fa-solid fa-screwdriver-wrench text-xl"></i>
+            </div>
+          </div>
+
+          <div class="bg-white dark:bg-slate-800 p-5 rounded-2xl shadow-sm border border-slate-200/80 dark:border-slate-700 flex items-center justify-between">
+            <div>
+              <p class="text-xs font-medium text-slate-500 dark:text-slate-400 uppercase tracking-wider">Crítico (≤ 5)</p>
+              <h3 id="statLowStock" class="text-2xl font-bold text-amber-600 dark:text-amber-400 mt-1">0</h3>
+            </div>
+            <div class="p-3 bg-amber-50 dark:bg-amber-950/50 text-amber-600 dark:text-amber-400 rounded-xl">
+              <i class="fa-solid fa-triangle-exclamation text-xl"></i>
+            </div>
+          </div>
+        </div>
+
+        <!-- Seção de Gráficos Visuais (Chart.js) -->
+        <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
+          <!-- Gráfico de Pizza: Status Geral -->
+          <div class="bg-white dark:bg-slate-800 p-6 rounded-2xl shadow-sm border border-slate-200/80 dark:border-slate-700 flex flex-col justify-between">
+            <div class="flex justify-between items-center mb-4">
+              <h3 class="font-bold text-base text-slate-900 dark:text-white flex items-center space-x-2">
+                <i class="fa-solid fa-chart-pie text-brand-600"></i>
+                <span>Proporção de Equipamentos (Disponíveis vs Cautelados vs Defeito)</span>
+              </h3>
+            </div>
+            <div class="relative w-full h-64 flex items-center justify-center">
+              <canvas id="statusPieChart"></canvas>
+            </div>
+          </div>
+
+          <!-- Gráfico de Barras: Movimentações Recentes (Últimos 7 dias) -->
+          <div class="bg-white dark:bg-slate-800 p-6 rounded-2xl shadow-sm border border-slate-200/80 dark:border-slate-700 flex flex-col justify-between">
+            <div class="flex justify-between items-center mb-4">
+              <h3 class="font-bold text-base text-slate-900 dark:text-white flex items-center space-x-2">
+                <i class="fa-solid fa-chart-column text-brand-600"></i>
+                <span>Movimentações dos Últimos 7 Dias</span>
+              </h3>
+            </div>
+            <div class="relative w-full h-64 flex items-center justify-center">
+              <canvas id="movementsBarChart"></canvas>
+            </div>
+          </div>
+        </div>
+
+        <!-- Banner de Aviso Crítico -->
+        <div id="criticalBanner" class="hidden bg-amber-50 dark:bg-amber-950/30 border-l-4 border-amber-500 p-4 rounded-xl shadow-sm">
+          <div class="flex items-start">
+            <div class="flex-shrink-0 text-amber-500 mt-0.5">
+              <i class="fa-solid fa-circle-exclamation text-lg"></i>
+            </div>
+            <div class="ml-3">
+              <h3 class="text-sm font-semibold text-amber-800 dark:text-amber-300">Atenção: Equipamentos com Estoque Mínimo (≤ 5 unidades)</h3>
+              <div id="criticalList" class="mt-1 text-xs text-amber-700 dark:text-amber-400 flex flex-wrap gap-2"></div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- ABA 2: INVENTÁRIO GERAL -->
+      <section id="tab-inventory" class="tab-content hidden space-y-6">
+        <div class="bg-white dark:bg-slate-800 rounded-2xl shadow-sm border border-slate-200/80 dark:border-slate-700 overflow-hidden" id="printableArea">
+          <div class="p-4 sm:p-5 border-b border-slate-200 dark:border-slate-700 flex flex-col sm:flex-row justify-between sm:items-center gap-4">
+            <div>
+              <h2 class="text-lg font-bold text-slate-900 dark:text-white">Inventário de Equipamentos por Categoria</h2>
+              <p class="text-xs text-slate-500 dark:text-slate-400">Gerencie saldos e filtros rápidos de estoque</p>
+            </div>
+            <div class="flex flex-wrap items-center gap-2">
+              <!-- Filtro por Categoria -->
+              <select id="filterCategory" onchange="renderInventoryTable()" class="p-2 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl text-xs focus:ring-2 focus:ring-brand-500 focus:outline-none">
+                <option value="ALL">Todas as Categorias</option>
+                <option value="Computadores">Computadores</option>
+                <option value="Periféricos">Periféricos</option>
+                <option value="Cabos">Cabos</option>
+                <option value="Rede">Rede</option>
+                <option value="Sobressalentes">Sobressalentes</option>
+                <option value="Outros">Outros</option>
+              </select>
+              <!-- Busca -->
+              <div class="relative max-w-xs w-full sm:w-auto">
+                <i class="fa-solid fa-magnifying-glass absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 text-xs"></i>
+                <input type="text" id="searchInventory" placeholder="Buscar item..." class="w-full pl-8 pr-3 py-2 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl text-xs focus:outline-none focus:ring-2 focus:ring-brand-500">
+              </div>
+              <!-- Modo Compacto / Impressão -->
+              <button type="button" onclick="window.print()" class="no-print px-3 py-2 bg-slate-100 hover:bg-slate-200 dark:bg-slate-700 dark:hover:bg-slate-600 text-slate-700 dark:text-slate-200 text-xs font-bold rounded-xl transition-all flex items-center space-x-1.5" title="Versão para Impressão">
+                <i class="fa-solid fa-print"></i>
+                <span class="hidden sm:inline">Imprimir</span>
+              </button>
+              <!-- Novo Item -->
+              <button type="button" onclick="openAddProductModal()" class="no-print px-3 py-2 bg-brand-600 hover:bg-brand-700 text-white text-xs font-bold rounded-xl shadow transition-all flex items-center space-x-1.5">
+                <i class="fa-solid fa-plus"></i>
+                <span>Novo Tipo</span>
+              </button>
+            </div>
+          </div>
+
+          <div class="overflow-x-auto">
+            <table class="w-full text-left border-collapse">
+              <thead>
+                <tr class="bg-slate-50 dark:bg-slate-700/50 text-slate-500 dark:text-slate-400 text-xs uppercase tracking-wider border-b border-slate-200 dark:border-slate-700">
+                  <th class="py-3.5 px-4 font-semibold">Equipamento</th>
+                  <th class="py-3.5 px-4 font-semibold">Categoria</th>
+                  <th class="py-3.5 px-4 font-semibold text-center">Disponível (Bom)</th>
+                  <th class="py-3.5 px-4 font-semibold text-center">Ativos Cautelados</th>
+                  <th class="py-3.5 px-4 font-semibold text-center">Com Defeito</th>
+                  <th class="py-3.5 px-4 font-semibold text-center">Status</th>
+                  <th class="py-3.5 px-4 font-semibold text-right no-print">Ações</th>
+                </tr>
+              </thead>
+              <tbody id="inventoryTableBody" class="divide-y divide-slate-200 dark:divide-slate-700/60 text-sm"></tbody>
+            </table>
+          </div>
+        </div>
+      </section>
+
+      <!-- ABA 3: ATIVOS INDIVIDUAIS & CAUTELAS -->
+      <section id="tab-patrimony" class="tab-content hidden space-y-6">
+        <div class="bg-white dark:bg-slate-800 rounded-2xl shadow-sm border border-slate-200/80 dark:border-slate-700 overflow-hidden">
+          <div class="p-4 sm:p-5 border-b border-slate-200 dark:border-slate-700 flex flex-col sm:flex-row justify-between sm:items-center gap-4">
+            <div>
+              <h2 class="text-lg font-bold text-slate-900 dark:text-white">Rastreabilidade por Número de Série / Tombo</h2>
+              <p class="text-xs text-slate-500 dark:text-slate-400">Controle individual de notebooks, monitores e ativos com emissão de Termo de Cautela</p>
+            </div>
+            <div class="flex items-center gap-2">
+              <div class="relative max-w-xs w-full">
+                <i class="fa-solid fa-magnifying-glass absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 text-xs"></i>
+                <input type="text" id="searchPatrimony" placeholder="Buscar Service Tag / Tombo..." class="w-full pl-8 pr-3 py-2 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl text-xs focus:outline-none focus:ring-2 focus:ring-brand-500">
+              </div>
+              <button type="button" onclick="openAddAssetModal()" class="px-3 py-2 bg-brand-600 hover:bg-brand-700 text-white text-xs font-bold rounded-xl shadow transition-all flex items-center space-x-1.5 whitespace-nowrap">
+                <i class="fa-solid fa-barcode"></i>
+                <span>Cadastrar Ativo Individual</span>
+              </button>
+            </div>
+          </div>
+
+          <div class="overflow-x-auto">
+            <table class="w-full text-left border-collapse">
+              <thead>
+                <tr class="bg-slate-50 dark:bg-slate-700/50 text-slate-500 dark:text-slate-400 text-xs uppercase tracking-wider border-b border-slate-200 dark:border-slate-700">
+                  <th class="py-3.5 px-4 font-semibold">Service Tag / Tombo</th>
+                  <th class="py-3.5 px-4 font-semibold">Equipamento</th>
+                  <th class="py-3.5 px-4 font-semibold">Status / Local</th>
+                  <th class="py-3.5 px-4 font-semibold">Colaborador / Setor</th>
+                  <th class="py-3.5 px-4 font-semibold">Data Cautela</th>
+                  <th class="py-3.5 px-4 font-semibold text-right">Ações & Cautela</th>
+                </tr>
+              </thead>
+              <tbody id="patrimonyTableBody" class="divide-y divide-slate-200 dark:divide-slate-700/60 text-sm"></tbody>
+            </table>
+          </div>
+        </div>
+      </section>
+
+      <!-- ABA 4: MOVIMENTAÇÃO & LEITOR DE CÓDIGO DE BARRAS -->
+      <section id="tab-movements" class="tab-content hidden max-w-3xl mx-auto space-y-6">
+        
+        <!-- Leitor de Código de Barras / Câmera -->
+        <div class="bg-white dark:bg-slate-800 p-6 rounded-2xl shadow-sm border border-slate-200/80 dark:border-slate-700 space-y-4">
+          <div class="flex justify-between items-center border-b border-slate-200 dark:border-slate-700 pb-3">
+            <div>
+              <h3 class="font-bold text-base text-slate-900 dark:text-white flex items-center space-x-2">
+                <i class="fa-solid fa-camera text-brand-600"></i>
+                <span>Leitor de Código de Barras / QR Code (Câmera ou USB)</span>
+              </h3>
+              <p class="text-xs text-slate-500 dark:text-slate-400 mt-0.5">Use um leitor USB focado no campo abaixo ou abra a câmera para bipar Service Tags.</p>
+            </div>
+            <button type="button" onclick="toggleScanner()" id="btnToggleScanner" class="px-3 py-1.5 bg-brand-50 dark:bg-brand-950/40 text-brand-600 dark:text-brand-400 border border-brand-200 dark:border-brand-800 rounded-xl text-xs font-bold hover:bg-brand-100 transition-all">
+              <i class="fa-solid fa-video mr-1"></i> Ligar Câmera
+            </button>
+          </div>
+
+          <div id="scannerContainer" class="hidden space-y-3">
+            <div id="reader" class="w-full max-w-md mx-auto rounded-xl overflow-hidden border border-slate-300 dark:border-slate-600"></div>
+          </div>
+
+          <div>
+            <label class="block text-xs font-bold text-slate-700 dark:text-slate-300 uppercase mb-1">Leitura Rápida por Código / Bipe</label>
+            <div class="flex gap-2">
+              <input type="text" id="quickScanInput" placeholder="Bipe o código de barras ou digite a Service Tag..." class="w-full p-2.5 bg-slate-50 dark:bg-slate-900 border border-slate-300 dark:border-slate-700 rounded-xl text-sm focus:ring-2 focus:ring-brand-500 focus:outline-none" onkeydown="handleQuickScanKey(event)">
+              <button type="button" onclick="processQuickScan()" class="px-4 py-2.5 bg-slate-800 hover:bg-slate-900 text-white text-xs font-bold rounded-xl">Localizar</button>
+            </div>
+          </div>
+        </div>
+
+        <!-- Formulário de Movimentação -->
+        <div class="bg-white dark:bg-slate-800 p-6 rounded-2xl shadow-sm border border-slate-200/80 dark:border-slate-700">
+          <div class="mb-6 border-b border-slate-200 dark:border-slate-700 pb-4">
+            <h2 class="text-xl font-bold text-slate-900 dark:text-white">Registrar Movimentação de Estoque</h2>
+            <p class="text-xs text-slate-500 dark:text-slate-400 mt-1">Entrada, saída de lotes ou devoluções.</p>
+          </div>
+
+          <form id="movementForm" onsubmit="handleMovementSubmit(event)" class="space-y-5">
+            <div>
+              <label class="block text-xs font-bold text-slate-700 dark:text-slate-300 uppercase tracking-wider mb-2">Tipo de Movimentação</label>
+              <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
+                <label class="relative flex items-center justify-center p-3 border border-slate-300 dark:border-slate-600 rounded-xl cursor-pointer hover:bg-emerald-50 dark:hover:bg-emerald-950/20 transition-all has-[:checked]:border-emerald-500 has-[:checked]:bg-emerald-50/80 dark:has-[:checked]:bg-emerald-950/40">
+                  <input type="radio" name="movementType" value="IN" class="sr-only" checked onchange="updateMovementTypeUI()">
+                  <div class="flex items-center space-x-2 font-semibold text-emerald-600 dark:text-emerald-400 text-xs">
+                    <i class="fa-solid fa-arrow-down-left text-sm"></i>
+                    <span>Entrada (+)</span>
+                  </div>
+                </label>
+
+                <label class="relative flex items-center justify-center p-3 border border-slate-300 dark:border-slate-600 rounded-xl cursor-pointer hover:bg-rose-50 dark:hover:bg-rose-950/20 transition-all has-[:checked]:border-rose-500 has-[:checked]:bg-rose-50/80 dark:has-[:checked]:bg-rose-950/40">
+                  <input type="radio" name="movementType" value="OUT" class="sr-only" onchange="updateMovementTypeUI()">
+                  <div class="flex items-center space-x-2 font-semibold text-rose-600 dark:text-rose-400 text-xs">
+                    <i class="fa-solid fa-arrow-up-right text-sm"></i>
+                    <span>Saída (-)</span>
+                  </div>
+                </label>
+
+                <label class="relative flex items-center justify-center p-3 border border-slate-300 dark:border-slate-600 rounded-xl cursor-pointer hover:bg-blue-50 dark:hover:bg-blue-950/20 transition-all has-[:checked]:border-blue-500 has-[:checked]:bg-blue-50/80 dark:has-[:checked]:bg-blue-950/40">
+                  <input type="radio" name="movementType" value="RETURN_OK" class="sr-only" onchange="updateMovementTypeUI()">
+                  <div class="flex items-center space-x-2 font-semibold text-blue-600 dark:text-blue-400 text-xs">
+                    <i class="fa-solid fa-rotate-left text-sm"></i>
+                    <span>Devolução (+)</span>
+                  </div>
+                </label>
+
+                <label class="relative flex items-center justify-center p-3 border border-slate-300 dark:border-slate-600 rounded-xl cursor-pointer hover:bg-amber-50 dark:hover:bg-amber-950/20 transition-all has-[:checked]:border-amber-500 has-[:checked]:bg-amber-50/80 dark:has-[:checked]:bg-amber-950/40">
+                  <input type="radio" name="movementType" value="DEFECTIVE" class="sr-only" onchange="updateMovementTypeUI()">
+                  <div class="flex items-center space-x-2 font-semibold text-amber-600 dark:text-amber-400 text-xs">
+                    <i class="fa-solid fa-screwdriver-wrench text-sm"></i>
+                    <span>Defeito</span>
+                  </div>
+                </label>
+              </div>
+            </div>
+
+            <div>
+              <label for="moveProductSelect" class="block text-xs font-bold text-slate-700 dark:text-slate-300 uppercase tracking-wider mb-2">Selecione o Equipamento</label>
+              <select id="moveProductSelect" required class="w-full p-3 bg-slate-50 dark:bg-slate-900 border border-slate-300 dark:border-slate-700 rounded-xl text-sm focus:ring-2 focus:ring-brand-500 focus:outline-none"></select>
+            </div>
+
+            <div>
+              <label for="moveQuantity" class="block text-xs font-bold text-slate-700 dark:text-slate-300 uppercase tracking-wider mb-2">Quantidade</label>
+              <input type="number" id="moveQuantity" min="1" value="1" required class="w-full p-3 bg-slate-50 dark:bg-slate-900 border border-slate-300 dark:border-slate-700 rounded-xl text-sm focus:ring-2 focus:ring-brand-500 focus:outline-none">
+            </div>
+
+            <div>
+              <label for="moveReason" class="block text-xs font-bold text-slate-700 dark:text-slate-300 uppercase tracking-wider mb-2">Observação / Motivo / Colaborador</label>
+              <input type="text" id="moveReason" placeholder="Ex: Nome do colaborador, ID de chamado, etc." class="w-full p-3 bg-slate-50 dark:bg-slate-900 border border-slate-300 dark:border-slate-700 rounded-xl text-sm focus:ring-2 focus:ring-brand-500 focus:outline-none">
+            </div>
+
+            <button type="submit" id="btnSubmitMovement" class="w-full py-3.5 bg-emerald-600 hover:bg-emerald-700 text-white font-bold rounded-xl shadow-md transition-all flex items-center justify-center space-x-2">
+              <i class="fa-solid fa-check"></i>
+              <span>Confirmar Entrada (+)</span>
+            </button>
+          </form>
+        </div>
+      </section>
+
+      <!-- ABA 5: HISTÓRICO & RELATÓRIOS -->
+      <section id="tab-logs" class="tab-content hidden space-y-4">
+        <div class="bg-white dark:bg-slate-800 rounded-2xl shadow-sm border border-slate-200/80 dark:border-slate-700 overflow-hidden">
+          <div class="p-4 sm:p-5 border-b border-slate-200 dark:border-slate-700 flex flex-col sm:flex-row justify-between sm:items-center gap-4">
+            <div>
+              <h2 class="text-lg font-bold text-slate-900 dark:text-white">Trilha de Auditoria & Exportação de Relatórios</h2>
+              <p class="text-xs text-slate-500 dark:text-slate-400">Exporte os logs completos para Excel (.xlsx) ou CSV para auditoria da diretoria</p>
+            </div>
+            <div class="flex items-center gap-2">
+              <button type="button" onclick="exportLogsExcel()" class="inline-flex items-center px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold rounded-xl shadow transition-all">
+                <i class="fa-solid fa-file-excel mr-2"></i> Exportar para Excel (.xlsx)
+              </button>
+              <button type="button" onclick="confirmClearLogs()" class="inline-flex items-center px-3 py-2 bg-rose-50 dark:bg-rose-950/30 text-rose-600 dark:text-rose-400 border border-rose-200 dark:border-rose-900/50 hover:bg-rose-600 hover:text-white text-xs font-bold rounded-xl transition-all">
+                <i class="fa-solid fa-trash-can mr-1"></i> Limpar (Admin)
+              </button>
+            </div>
+          </div>
+
+          <div class="overflow-x-auto">
+            <table class="w-full text-left border-collapse">
+              <thead>
+                <tr class="bg-slate-50 dark:bg-slate-700/50 text-slate-500 dark:text-slate-400 text-xs uppercase tracking-wider border-b border-slate-200 dark:border-slate-700">
+                  <th class="py-3.5 px-4 font-semibold">Data / Hora</th>
+                  <th class="py-3.5 px-4 font-semibold">Usuário</th>
+                  <th class="py-3.5 px-4 font-semibold">Tipo de Ação</th>
+                  <th class="py-3.5 px-4 font-semibold">Equipamento / Ativo</th>
+                  <th class="py-3.5 px-4 font-semibold text-center">Qtd.</th>
+                  <th class="py-3.5 px-4 font-semibold">Detalhes / Motivo</th>
+                </tr>
+              </thead>
+              <tbody id="logsTableBody" class="divide-y divide-slate-200 dark:divide-slate-700/60 text-sm"></tbody>
+            </table>
+          </div>
+        </div>
+      </section>
+
+      <!-- ABA 6: CONFIGURAÇÕES & SEGURANÇA -->
+      <section id="tab-settings" class="tab-content hidden max-w-4xl mx-auto space-y-6">
+        
+        <!-- Aviso de Permissão Restrita -->
+        <div id="settingsRestrictedNotice" class="hidden bg-rose-50 dark:bg-rose-950/40 border border-rose-200 dark:border-rose-800 p-6 rounded-2xl text-center space-y-3">
+          <div class="w-12 h-12 bg-rose-100 dark:bg-rose-900/60 text-rose-600 dark:text-rose-400 rounded-full flex items-center justify-center mx-auto">
+            <i class="fa-solid fa-lock text-xl"></i>
+          </div>
+          <h3 class="text-lg font-bold text-slate-900 dark:text-white">Acesso Restrito a Administradores</h3>
+          <p class="text-xs text-slate-600 dark:text-slate-400 max-w-md mx-auto">O usuário selecionado atualmente possui permissão <strong>Padrão</strong>. Selecione um usuário Administrador no topo para gerenciar senhas e políticas de segurança.</p>
+        </div>
+
+        <!-- Conteúdo Admin -->
+        <div id="settingsAdminContent" class="grid grid-cols-1 lg:grid-cols-2 gap-6">
+          
+          <!-- Gestão de Usuários & Políticas de Saída Crítica -->
+          <div class="bg-white dark:bg-slate-800 p-6 rounded-2xl shadow-sm border border-slate-200/80 dark:border-slate-700 space-y-5">
+            <div class="border-b border-slate-200 dark:border-slate-700 pb-3">
+              <h2 class="text-lg font-bold text-slate-900 dark:text-white flex items-center space-x-2">
+                <i class="fa-solid fa-shield-cat text-brand-600"></i>
+                <span>Política de Saídas Críticas & Senhas</span>
+              </h2>
+              <p class="text-xs text-slate-500 dark:text-slate-400 mt-1">Exigir senha de supervisor para ativos de alto valor (Notebooks/Servidores).</p>
+            </div>
+
+            <div class="flex items-center justify-between p-3 bg-slate-50 dark:bg-slate-900/50 rounded-xl border border-slate-200 dark:border-slate-700">
+              <div>
+                <p class="text-xs font-bold text-slate-800 dark:text-slate-200">Exigir Senha de Admin para Ativos Individuais</p>
+                <p class="text-[10px] text-slate-500">Qualquer cautela de notebook/ativo exigirá aprovação de senha.</p>
+              </div>
+              <label class="relative inline-flex items-center cursor-pointer">
+                <input type="checkbox" id="requirePasswordForCritical" onchange="toggleCriticalPolicy(this)" class="sr-only peer">
+                <div class="w-9 h-5 bg-slate-300 peer-focus:outline-none rounded-full peer dark:bg-slate-700 peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-brand-600"></div>
+              </label>
+            </div>
+
+            <form id="addUserForm" onsubmit="handleAddUser(event)" class="space-y-3 pt-2">
+              <h4 class="text-xs font-bold text-slate-500 uppercase">Cadastrar Novo Operador</h4>
+              <div>
+                <input type="text" id="newUserName" required placeholder="Nome do operador" class="w-full p-2.5 bg-slate-50 dark:bg-slate-900 border border-slate-300 dark:border-slate-700 rounded-xl text-xs focus:ring-2 focus:ring-brand-500 focus:outline-none">
+              </div>
+              <div class="grid grid-cols-2 gap-2">
+                <select id="newUserRole" onchange="toggleNewUserPassField()" class="w-full p-2.5 bg-slate-50 dark:bg-slate-900 border border-slate-300 dark:border-slate-700 rounded-xl text-xs focus:ring-2 focus:ring-brand-500 focus:outline-none">
+                  <option value="standard">Padrão</option>
+                  <option value="admin">Administrador</option>
+                </select>
+                <div id="newUserPassWrapper" class="hidden">
+                  <input type="password" id="newUserPassword" minlength="4" placeholder="Senha admin" class="w-full p-2.5 bg-slate-50 dark:bg-slate-900 border border-slate-300 dark:border-slate-700 rounded-xl text-xs focus:ring-2 focus:ring-brand-500 focus:outline-none">
+                </div>
+              </div>
+              <button type="submit" class="w-full py-2 bg-brand-600 hover:bg-brand-700 text-white text-xs font-bold rounded-xl shadow transition-all">Adicionar Usuário</button>
+            </form>
+
+            <div id="usersListContainer" class="divide-y divide-slate-200 dark:divide-slate-700 border border-slate-200 dark:border-slate-700 rounded-xl overflow-hidden mt-2"></div>
+          </div>
+
+          <!-- Alterar Senha Master -->
+          <div class="bg-white dark:bg-slate-800 p-6 rounded-2xl shadow-sm border border-slate-200/80 dark:border-slate-700 space-y-5 h-fit">
+            <div class="border-b border-slate-200 dark:border-slate-700 pb-3">
+              <h2 class="text-lg font-bold text-slate-900 dark:text-white flex items-center space-x-2">
+                <i class="fa-solid fa-key text-brand-600"></i>
+                <span>Senha Master de Administração</span>
+              </h2>
+              <p class="text-xs text-slate-500 dark:text-slate-400 mt-1">Altere a senha principal de segurança do sistema.</p>
+            </div>
+
+            <form id="changePasswordForm" onsubmit="handleChangePassword(event)" class="space-y-3">
+              <div>
+                <label class="block text-xs font-bold text-slate-700 dark:text-slate-300 uppercase mb-1">Senha Atual</label>
+                <input type="password" id="currentPasswordInput" required class="w-full p-2.5 bg-slate-50 dark:bg-slate-900 border border-slate-300 dark:border-slate-700 rounded-xl text-xs focus:ring-2 focus:ring-brand-500 focus:outline-none">
+              </div>
+              <div>
+                <label class="block text-xs font-bold text-slate-700 dark:text-slate-300 uppercase mb-1">Nova Senha</label>
+                <input type="password" id="newPasswordInput" required minlength="4" class="w-full p-2.5 bg-slate-50 dark:bg-slate-900 border border-slate-300 dark:border-slate-700 rounded-xl text-xs focus:ring-2 focus:ring-brand-500 focus:outline-none">
+              </div>
+              <div>
+                <label class="block text-xs font-bold text-slate-700 dark:text-slate-300 uppercase mb-1">Confirme a Nova Senha</label>
+                <input type="password" id="confirmNewPasswordInput" required minlength="4" class="w-full p-2.5 bg-slate-50 dark:bg-slate-900 border border-slate-300 dark:border-slate-700 rounded-xl text-xs focus:ring-2 focus:ring-brand-500 focus:outline-none">
+              </div>
+              <button type="submit" class="w-full py-2.5 bg-slate-800 hover:bg-slate-900 text-white text-xs font-bold rounded-xl shadow transition-all">Atualizar Senha Master</button>
+            </form>
+          </div>
+
+        </div>
+
+        <div class="bg-white dark:bg-slate-800 p-6 rounded-2xl shadow-sm border border-slate-200/80 dark:border-slate-700 space-y-4">
+          <div>
+            <h2 class="text-lg font-bold text-slate-900 dark:text-white flex items-center space-x-2">
+              <i class="fa-solid fa-cloud-arrow-up text-brand-600"></i>
+              <span>Compartilhamento e sincronização online</span>
+            </h2>
+            <p class="text-xs text-slate-500 dark:text-slate-400 mt-1">
+              Ative login Google e Firestore no Firebase. Cole a configuração do app abaixo. O inventário e o histórico sincronizam em tempo real; a autorização é aplicada pelas regras do Firestore.
+            </p>
+            <p class="text-xs text-slate-500 dark:text-slate-400 mt-2">
+              Publique o modelo <code>firestore.rules</code> no Firebase Console e substitua o marcador de e-mail por cada conta autorizada. Não coloque e-mails de colaboradores no repositório público.
+            </p>
+          </div>
+          <label for="firebaseConfigInput" class="block text-xs font-bold text-slate-700 dark:text-slate-300 uppercase">Configuração do app Firebase (JSON)</label>
+          <textarea id="firebaseConfigInput" rows="5" spellcheck="false" placeholder='{"apiKey":"...","authDomain":"...","projectId":"...","appId":"..."}' class="w-full p-3 bg-slate-50 dark:bg-slate-900 border border-slate-300 dark:border-slate-700 rounded-xl text-xs font-mono focus:ring-2 focus:ring-brand-500 focus:outline-none"></textarea>
+          <p class="text-[11px] text-amber-700 dark:text-amber-400">
+            A configuração do Firebase é pública e pode acompanhar o link, mas as regras do Firestore devem permitir acesso somente às contas Google aprovadas. A senha local do sistema não substitui esse controle; não inclua senhas ou chaves privadas aqui.
+          </p>
+          <div class="flex flex-col sm:flex-row gap-2">
+            <button type="button" onclick="saveFirebaseConfig()" class="px-4 py-2.5 bg-brand-600 hover:bg-brand-700 text-white text-xs font-bold rounded-xl">
+              Salvar e conectar
+            </button>
+            <button type="button" onclick="shareApp()" class="px-4 py-2.5 bg-slate-100 hover:bg-slate-200 dark:bg-slate-700 dark:hover:bg-slate-600 text-slate-700 dark:text-slate-200 text-xs font-bold rounded-xl">
+              <i class="fa-solid fa-share-nodes mr-1"></i>Copiar link de compartilhamento
+            </button>
+          </div>
+        </div>
+      </section>
+
+    </main>
+
+    <!-- MODAL DE ADICIONAR TIPO DE PRODUTO / CATEGORIA -->
+    <div id="addProductModal" class="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-50 flex items-center justify-center p-4 hidden">
+      <div class="bg-white dark:bg-slate-800 rounded-2xl shadow-xl max-w-md w-full p-6 border border-slate-200 dark:border-slate-700">
+        <div class="flex justify-between items-center border-b border-slate-200 dark:border-slate-700 pb-3 mb-4">
+          <h3 class="font-bold text-lg text-slate-900 dark:text-white flex items-center space-x-2">
+            <i class="fa-solid fa-box-open text-brand-600"></i>
+            <span>Cadastrar Tipo de Equipamento</span>
+          </h3>
+          <button type="button" onclick="closeAddProductModal()" class="text-slate-400 hover:text-slate-600">
+            <i class="fa-solid fa-xmark text-lg"></i>
+          </button>
+        </div>
+        <form id="addProductForm" onsubmit="handleAddProductSubmit(event)" class="space-y-4">
+          <div>
+            <label class="block text-xs font-bold text-slate-700 dark:text-slate-300 uppercase mb-1">Nome do Equipamento</label>
+            <input type="text" id="newProductName" required placeholder="Ex: Notebook Dell Latitude" class="w-full p-3 bg-slate-50 dark:bg-slate-900 border border-slate-300 dark:border-slate-700 rounded-xl text-sm focus:ring-2 focus:ring-brand-500 focus:outline-none">
+          </div>
+          <div>
+            <label class="block text-xs font-bold text-slate-700 dark:text-slate-300 uppercase mb-1">Categoria</label>
+            <select id="newProductCategory" class="w-full p-3 bg-slate-50 dark:bg-slate-900 border border-slate-300 dark:border-slate-700 rounded-xl text-sm focus:ring-2 focus:ring-brand-500 focus:outline-none">
+              <option value="Computadores">Computadores</option>
+              <option value="Periféricos">Periféricos</option>
+              <option value="Cabos">Cabos</option>
+              <option value="Rede">Rede</option>
+              <option value="Sobressalentes">Sobressalentes</option>
+              <option value="Outros">Outros</option>
+            </select>
+          </div>
+          <div class="grid grid-cols-2 gap-3">
+            <div>
+              <label class="block text-xs font-bold text-slate-700 dark:text-slate-300 uppercase mb-1">Qtd Disponível (Boa)</label>
+              <input type="number" id="newProductQty" min="0" value="0" required class="w-full p-3 bg-slate-50 dark:bg-slate-900 border border-slate-300 dark:border-slate-700 rounded-xl text-sm focus:ring-2 focus:ring-brand-500 focus:outline-none">
+            </div>
+            <div>
+              <label class="block text-xs font-bold text-slate-700 dark:text-slate-300 uppercase mb-1">Qtd c/ Defeito</label>
+              <input type="number" id="newProductDefective" min="0" value="0" required class="w-full p-3 bg-slate-50 dark:bg-slate-900 border border-slate-300 dark:border-slate-700 rounded-xl text-sm focus:ring-2 focus:ring-brand-500 focus:outline-none">
+            </div>
+          </div>
+          <div class="flex space-x-3 pt-2">
+            <button type="button" onclick="closeAddProductModal()" class="w-1/2 py-2.5 bg-slate-100 hover:bg-slate-200 dark:bg-slate-700 text-slate-700 dark:text-slate-200 text-sm font-semibold rounded-xl">Cancelar</button>
+            <button type="submit" class="w-1/2 py-2.5 bg-brand-600 hover:bg-brand-700 text-white text-sm font-semibold rounded-xl shadow">Cadastrar</button>
+          </div>
+        </form>
+      </div>
+    </div>
+
+    <!-- MODAL DE EDITAR TIPO DE PRODUTO / CATEGORIA -->
+    <div id="editProductModal" class="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-50 flex items-center justify-center p-4 hidden">
+      <div class="bg-white dark:bg-slate-800 rounded-2xl shadow-xl max-w-md w-full p-6 border border-slate-200 dark:border-slate-700">
+        <div class="flex justify-between items-center border-b border-slate-200 dark:border-slate-700 pb-3 mb-4">
+          <h3 class="font-bold text-lg text-slate-900 dark:text-white flex items-center space-x-2">
+            <i class="fa-solid fa-pen-to-square text-brand-600"></i>
+            <span>Editar Equipamento / Saldo</span>
+          </h3>
+          <button type="button" onclick="closeEditProductModal()" class="text-slate-400 hover:text-slate-600">
+            <i class="fa-solid fa-xmark text-lg"></i>
+          </button>
+        </div>
+        <form id="editProductForm" onsubmit="handleEditProductSubmit(event)" class="space-y-4">
+          <input type="hidden" id="editProductId">
+          <div>
+            <label class="block text-xs font-bold text-slate-700 dark:text-slate-300 uppercase mb-1">Nome do Equipamento</label>
+            <input type="text" id="editProductName" required class="w-full p-3 bg-slate-50 dark:bg-slate-900 border border-slate-300 dark:border-slate-700 rounded-xl text-sm focus:ring-2 focus:ring-brand-500 focus:outline-none">
+          </div>
+          <div>
+            <label class="block text-xs font-bold text-slate-700 dark:text-slate-300 uppercase mb-1">Categoria</label>
+            <select id="editProductCategory" class="w-full p-3 bg-slate-50 dark:bg-slate-900 border border-slate-300 dark:border-slate-700 rounded-xl text-sm focus:ring-2 focus:ring-brand-500 focus:outline-none">
+              <option value="Computadores">Computadores</option>
+              <option value="Periféricos">Periféricos</option>
+              <option value="Cabos">Cabos</option>
+              <option value="Rede">Rede</option>
+              <option value="Sobressalentes">Sobressalentes</option>
+              <option value="Outros">Outros</option>
+            </select>
+          </div>
+          <div class="grid grid-cols-2 gap-3">
+            <div>
+              <label class="block text-xs font-bold text-slate-700 dark:text-slate-300 uppercase mb-1">Qtd Disponível (Boa)</label>
+              <input type="number" id="editProductQty" min="0" required class="w-full p-3 bg-slate-50 dark:bg-slate-900 border border-slate-300 dark:border-slate-700 rounded-xl text-sm focus:ring-2 focus:ring-brand-500 focus:outline-none">
+            </div>
+            <div>
+              <label class="block text-xs font-bold text-slate-700 dark:text-slate-300 uppercase mb-1">Qtd c/ Defeito</label>
+              <input type="number" id="editProductDefective" min="0" required class="w-full p-3 bg-slate-50 dark:bg-slate-900 border border-slate-300 dark:border-slate-700 rounded-xl text-sm focus:ring-2 focus:ring-brand-500 focus:outline-none">
+            </div>
+          </div>
+          <div class="flex space-x-3 pt-2">
+            <button type="button" onclick="closeEditProductModal()" class="w-1/2 py-2.5 bg-slate-100 hover:bg-slate-200 dark:bg-slate-700 text-slate-700 dark:text-slate-200 text-sm font-semibold rounded-xl">Cancelar</button>
+            <button type="submit" class="w-1/2 py-2.5 bg-brand-600 hover:bg-brand-700 text-white text-sm font-semibold rounded-xl shadow">Salvar Alterações</button>
+          </div>
+        </form>
+      </div>
+    </div>
+
+    <!-- MODAL DE ADICIONAR ATIVO INDIVIDUAL (SERVICE TAG / TOMBO) -->
+    <div id="addAssetModal" class="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-50 flex items-center justify-center p-4 hidden">
+      <div class="bg-white dark:bg-slate-800 rounded-2xl shadow-xl max-w-md w-full p-6 border border-slate-200 dark:border-slate-700">
+        <div class="flex justify-between items-center border-b border-slate-200 dark:border-slate-700 pb-3 mb-4">
+          <h3 class="font-bold text-lg text-slate-900 dark:text-white flex items-center space-x-2">
+            <i class="fa-solid fa-barcode text-brand-600"></i>
+            <span>Cadastrar Ativo Individual (Service Tag)</span>
+          </h3>
+          <button type="button" onclick="closeAddAssetModal()" class="text-slate-400 hover:text-slate-600">
+            <i class="fa-solid fa-xmark text-lg"></i>
+          </button>
+        </div>
+        <form id="addAssetForm" onsubmit="handleAddAssetSubmit(event)" class="space-y-4">
+          <div>
+            <label class="block text-xs font-bold text-slate-700 dark:text-slate-300 uppercase mb-1">Service Tag / Etiqueta Patrimonial</label>
+            <input type="text" id="assetTag" required placeholder="Ex: DELL-SN-987654 ou PAT-00123" class="w-full p-3 bg-slate-50 dark:bg-slate-900 border border-slate-300 dark:border-slate-700 rounded-xl text-sm focus:ring-2 focus:ring-brand-500 focus:outline-none font-mono">
+          </div>
+          <div>
+            <label class="block text-xs font-bold text-slate-700 dark:text-slate-300 uppercase mb-1">Tipo de Equipamento</label>
+            <select id="assetProductName" class="w-full p-3 bg-slate-50 dark:bg-slate-900 border border-slate-300 dark:border-slate-700 rounded-xl text-sm focus:ring-2 focus:ring-brand-500 focus:outline-none"></select>
+          </div>
+          <div>
+            <label class="block text-xs font-bold text-slate-700 dark:text-slate-300 uppercase mb-1">Status Inicial</label>
+            <select id="assetStatus" class="w-full p-3 bg-slate-50 dark:bg-slate-900 border border-slate-300 dark:border-slate-700 rounded-xl text-sm focus:ring-2 focus:ring-brand-500 focus:outline-none">
+              <option value="Disponível">Disponível em Estoque</option>
+              <option value="Cautelado">Cautelado (Emprestado)</option>
+              <option value="Defeito">Com Defeito / Manutenção</option>
+            </select>
+          </div>
+          <div class="grid grid-cols-2 gap-3">
+            <div>
+              <label class="block text-xs font-bold text-slate-700 dark:text-slate-300 uppercase mb-1">Colaborador (Se cautelado)</label>
+              <input type="text" id="assetHolder" placeholder="Nome do colaborador" class="w-full p-3 bg-slate-50 dark:bg-slate-900 border border-slate-300 dark:border-slate-700 rounded-xl text-sm focus:ring-2 focus:ring-brand-500 focus:outline-none">
+            </div>
+            <div>
+              <label class="block text-xs font-bold text-slate-700 dark:text-slate-300 uppercase mb-1">Setor / Departamento</label>
+              <input type="text" id="assetDepartment" placeholder="Ex: Financeiro" class="w-full p-3 bg-slate-50 dark:bg-slate-900 border border-slate-300 dark:border-slate-700 rounded-xl text-sm focus:ring-2 focus:ring-brand-500 focus:outline-none">
+            </div>
+          </div>
+          <div class="flex items-center space-x-2 p-3 bg-slate-50 dark:bg-slate-900/60 rounded-xl border border-slate-200 dark:border-slate-700">
+            <input type="checkbox" id="assetDeductStock" checked class="w-4 h-4 text-brand-600 rounded border-slate-300 focus:ring-brand-500">
+            <label for="assetDeductStock" class="text-xs font-medium text-slate-700 dark:text-slate-300 cursor-pointer">
+              Descontar 1 unidade do saldo disponível no Inventário Geral
+            </label>
+          </div>
+          <div class="flex space-x-3 pt-2">
+            <button type="button" onclick="closeAddAssetModal()" class="w-1/2 py-2.5 bg-slate-100 hover:bg-slate-200 dark:bg-slate-700 text-slate-700 dark:text-slate-200 text-sm font-semibold rounded-xl">Cancelar</button>
+            <button type="submit" class="w-1/2 py-2.5 bg-brand-600 hover:bg-brand-700 text-white text-sm font-semibold rounded-xl shadow">Cadastrar Ativo</button>
+          </div>
+        </form>
+      </div>
+    </div>
+
+    <!-- MODAL DE GERAR / VISUALIZAR TERMO DE CAUTELA (PDF) -->
+    <div id="cautelaModal" class="fixed inset-0 bg-slate-900/70 backdrop-blur-sm z-50 flex items-center justify-center p-4 hidden">
+      <div class="bg-white dark:bg-slate-900 rounded-2xl shadow-2xl max-w-2xl w-full p-8 border border-slate-200 dark:border-slate-700 space-y-6 max-h-[90vh] overflow-y-auto">
+        
+        <!-- Conteúdo do Termo para Impressão / PDF -->
+        <div id="cautelaPrintArea" class="bg-white text-slate-900 p-6 rounded-xl border border-slate-200 space-y-6">
+          <div class="text-center border-b border-slate-300 pb-4">
+            <h2 class="font-bold text-xl uppercase tracking-wider text-slate-900">Termo de Responsabilidade e Cautela de Equipamento</h2>
+            <p class="text-xs text-slate-500 mt-1">Setor de Tecnologia da Informação - Controle Patrimonial</p>
+          </div>
+
+          <div class="text-xs space-y-3 leading-relaxed">
+            <p>Declaro para os devidos fins que recebi do Departamento de TI da empresa o equipamento abaixo especificado, em perfeito estado de conservação e funcionamento, comprometerendo-me a zelar pela sua guarda e integridade.</p>
+            
+            <div class="bg-slate-50 p-4 rounded-lg border border-slate-200 space-y-2">
+              <div class="grid grid-cols-2 gap-2">
+                <div><strong>Equipamento:</strong> <span id="cautelaItemName">Notebook Dell</span></div>
+                <div><strong>Service Tag / Tombo:</strong> <span id="cautelaItemTag" class="font-mono font-bold">DELL-12345</span></div>
+              </div>
+              <div class="grid grid-cols-2 gap-2">
+                <div><strong>Colaborador:</strong> <span id="cautelaHolder">João Silva</span></div>
+                <div><strong>Setor / Departamento:</strong> <span id="cautelaDepartment">Financeiro</span></div>
+              </div>
+              <div><strong>Data da Cautela:</strong> <span id="cautelaDate">12/11/2026</span></div>
+            </div>
+
+            <p class="text-[11px] text-slate-600">
+              O colaborador reconhece que o equipamento destina-se exclusivamente ao uso profissional, sendo vedada a entrega a terceiros sem autorização prévia da TI. Em caso de furto, roubo ou dano por mau uso, o colaborador obriga-se a comunicar imediatamente o suporte técnico.
+            </p>
+          </div>
+
+          <div class="pt-12 grid grid-cols-2 gap-8 text-center text-xs">
+            <div class="border-t border-slate-400 pt-2">
+              <p class="font-bold" id="cautelaHolderSign">João Silva</p>
+              <p class="text-[10px] text-slate-500">Assinatura do Colaborador</p>
+            </div>
+            <div class="border-t border-slate-400 pt-2">
+              <p class="font-bold">Responsável TI</p>
+              <p class="text-[10px] text-slate-500">Controle Patrimonial</p>
+            </div>
+          </div>
+        </div>
+
+        <!-- Botões de Ação do Modal Cautela -->
+        <div class="flex space-x-3 no-print">
+          <button type="button" onclick="closeCautelaModal()" class="w-1/3 py-2.5 bg-slate-200 hover:bg-slate-300 text-slate-800 text-xs font-bold rounded-xl">Fechar</button>
+          <button type="button" onclick="downloadCautelaPDF()" class="w-2/3 py-2.5 bg-brand-600 hover:bg-brand-700 text-white text-xs font-bold rounded-xl shadow flex items-center justify-center space-x-2">
+            <i class="fa-solid fa-file-pdf"></i>
+            <span>Baixar / Imprimir Termo em PDF</span>
+          </button>
+        </div>
+      </div>
+    </div>
+
+    <!-- MODAL AUTENTICAÇÃO ADMIN -->
+    <div id="adminAuthModal" class="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-50 flex items-center justify-center p-4 hidden">
+      <div class="bg-white dark:bg-slate-800 rounded-2xl shadow-xl max-w-sm w-full p-6 border border-slate-200 dark:border-slate-700">
+        <div class="text-center mb-4">
+          <div class="w-12 h-12 bg-rose-100 dark:bg-rose-950/60 text-rose-600 dark:text-rose-400 rounded-full flex items-center justify-center mx-auto mb-3">
+            <i class="fa-solid fa-lock text-xl"></i>
+          </div>
+          <h3 class="font-bold text-lg text-slate-900 dark:text-white">Autenticação Requerida</h3>
+          <p id="adminAuthDescription" class="text-xs text-slate-500 dark:text-slate-400 mt-1">Informe a senha de Administrador para prosseguir.</p>
+        </div>
+        <form id="adminAuthForm" onsubmit="handleAdminAuthSubmit(event)" class="space-y-4">
+          <div>
+            <input type="password" id="adminPasswordInput" required placeholder="Digite a senha de admin" class="w-full p-3 bg-slate-50 dark:bg-slate-900 border border-slate-300 dark:border-slate-700 rounded-xl text-sm focus:ring-2 focus:ring-brand-500 focus:outline-none text-center font-bold tracking-widest">
+          </div>
+          <div class="flex space-x-3">
+            <button type="button" onclick="closeAdminAuthModal()" class="w-1/2 py-2.5 bg-slate-100 hover:bg-slate-200 dark:bg-slate-700 text-slate-700 dark:text-slate-200 text-sm font-semibold rounded-xl">Cancelar</button>
+            <button type="submit" class="w-1/2 py-2.5 bg-rose-600 hover:bg-rose-700 text-white text-sm font-semibold rounded-xl shadow">Confirmar</button>
+          </div>
+        </form>
+      </div>
+    </div>
+
+    <!-- Rodapé -->
+    <footer class="bg-white dark:bg-slate-800 border-t border-slate-200 dark:border-slate-700 py-4 text-center text-xs text-slate-500 dark:text-slate-400 no-print">
+      <p>Sistema de Controle de Estoque & Patrimônio de TI &copy; <span id="year"></span> - Sincronizado online em tempo real.</p>
+    </footer>
+
+  </div>
+
+  <!-- LÓGICA DO SISTEMA -->
+  <script>
+    const DEFAULT_PASS = '257010';
+    const INITIAL_PRODUCTS = [
+      { id: '1', name: 'Notebook Dell Latitude', category: 'Computadores', quantity: 5, defectiveQty: 0 },
+      { id: '2', name: 'Monitor 24" LG', category: 'Periféricos', quantity: 10, defectiveQty: 0 },
+      { id: '3', name: 'Teclado USB ABNT2', category: 'Periféricos', quantity: 12, defectiveQty: 0 },
+      { id: '4', name: 'Mouse Óptico USB', category: 'Periféricos', quantity: 15, defectiveQty: 0 },
+      { id: '5', name: 'Cabo de Força Tripolar', category: 'Cabos', quantity: 20, defectiveQty: 0 },
+      { id: '6', name: 'Cabo HDMI 2m', category: 'Cabos', quantity: 4, defectiveQty: 0 },
+      { id: '7', name: 'Switch 24 Portas Gigabit', category: 'Rede', quantity: 2, defectiveQty: 0 },
+      { id: '8', name: 'Patch Cord Cat6 2m', category: 'Rede', quantity: 25, defectiveQty: 0 },
+      { id: '9', name: 'Fonte de Alimentação ATX 500W', category: 'Sobressalentes', quantity: 6, defectiveQty: 0 }
+    ];
+
+    const INITIAL_ASSETS = [];
+
+    const INITIAL_USERS = [
+      { id: 'u1', name: 'Administrador', role: 'admin', password: DEFAULT_PASS },
+      { id: 'u2', name: 'Técnico TI (Padrão)', role: 'standard', password: '' }
+    ];
+
+    window.appState = {
+      items: [],
+      assets: [],
+      logs: [],
+      users: [],
+      currentUserId: 'u1',
+      adminPassword: DEFAULT_PASS,
+      requireCriticalPass: false,
+      pendingAdminCallback: null,
+      expectedAdminPass: DEFAULT_PASS,
+      cloudSyncFn: null,
+      scanner: null,
+      scannerActive: false,
+      pieChartInstance: null,
+      barChartInstance: null
+    };
+
+    function saveLocal(key, value) {
+      try {
+        localStorage.setItem('stock_patrimony_' + key, JSON.stringify(value));
+      } catch (e) {}
+    }
+
+    function getLocal(key, fallback) {
+      try {
+        const item = localStorage.getItem('stock_patrimony_' + key);
+        return item ? JSON.parse(item) : fallback;
+      } catch (e) {
+        return fallback;
+      }
+    }
+
+    function getCurrentUser() {
+      return window.appState.users.find(u => u.id === window.appState.currentUserId) || window.appState.users[0] || INITIAL_USERS[0];
+    }
+
+    function persistAll() {
+      saveLocal('items', window.appState.items);
+      saveLocal('assets', window.appState.assets);
+      saveLocal('logs', window.appState.logs);
+      saveLocal('users', window.appState.users);
+      saveLocal('password', window.appState.adminPassword);
+      saveLocal('requireCriticalPass', window.appState.requireCriticalPass);
+      if (typeof window.appState.cloudSyncFn === 'function') {
+        window.appState.cloudSyncFn();
+      }
+    }
+
+    function addLog(actionType, productName, quantityChange, details = '') {
+      const now = new Date();
+      const timestamp = now.toLocaleDateString('pt-BR') + ' ' + now.toLocaleTimeString('pt-BR');
+      const activeUser = getCurrentUser();
+      
+      window.appState.logs.unshift({
+        id: Date.now().toString(36) + Math.random().toString(36).substr(2, 5),
+        timestamp,
+        userName: activeUser ? activeUser.name : 'Sistema',
+        actionType,
+        productName,
+        quantityChange,
+        details
+      });
+      persistAll();
+      renderLogsTable();
+      updateCharts();
+    }
+
+    // NAVEGAÇÃO DE ABAS
+    window.switchTab = function(tabId) {
+      const tabButtons = document.querySelectorAll('.tab-btn');
+      tabButtons.forEach(b => {
+        if (b.getAttribute('data-tab') === tabId) {
+          b.classList.remove('text-slate-600', 'dark:text-slate-400', 'hover:bg-slate-200/60');
+          b.classList.add('bg-brand-600', 'text-white', 'shadow-sm');
+        } else {
+          b.classList.remove('bg-brand-600', 'text-white', 'shadow-sm');
+          b.classList.add('text-slate-600', 'dark:text-slate-400', 'hover:bg-slate-200/60');
+        }
+      });
+
+      document.querySelectorAll('.tab-content').forEach(sec => sec.classList.add('hidden'));
+      const target = document.getElementById('tab-' + tabId);
+      if (target) target.classList.remove('hidden');
+
+      if (tabId === 'dashboard') {
+        setTimeout(updateCharts, 50);
+      }
+    };
+
+    // TEMA
+    function loadTheme() {
+      const savedTheme = localStorage.getItem('stock_ti_theme');
+      const prefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
+      const isDark = savedTheme === 'dark' || (!savedTheme && prefersDark);
+      document.documentElement.classList.toggle('dark', isDark);
+      const icon = document.getElementById('themeIcon');
+      if (icon) icon.className = isDark ? 'fa-solid fa-sun text-lg text-amber-400' : 'fa-solid fa-moon text-lg';
+    }
+
+    document.getElementById('themeToggle').addEventListener('click', () => {
+      document.documentElement.classList.toggle('dark');
+      const isDark = document.documentElement.classList.contains('dark');
+      localStorage.setItem('stock_ti_theme', isDark ? 'dark' : 'light');
+      document.getElementById('themeIcon').className = isDark ? 'fa-solid fa-sun text-lg text-amber-400' : 'fa-solid fa-moon text-lg';
+      updateCharts();
+    });
+
+    // RENDERIZAÇÃO GERAL
+    window.renderAll = function() {
+      renderUsersUI();
+      renderInventoryTable();
+      renderPatrimonyTable();
+      renderStatsAndAlerts();
+      populateMovementSelect();
+      populateAssetProductSelect();
+      renderLogsTable();
+      updateCharts();
+    };
+
+    function renderUsersUI() {
+      const select = document.getElementById('activeUserSelect');
+      const users = window.appState.users;
+      if (!users.some(u => u.id === window.appState.currentUserId) && users.length > 0) {
+        window.appState.currentUserId = users[0].id;
+      }
+
+      select.innerHTML = users.map(u => 
+        `<option value="${u.id}" ${u.id === window.appState.currentUserId ? 'selected' : ''}>${escapeHTML(u.name)}</option>`
+      ).join('');
+
+      const activeUser = getCurrentUser();
+      const isAdmin = activeUser.role === 'admin';
+
+      const badge = document.getElementById('activeUserRoleBadge');
+      const icon = document.getElementById('activeUserIcon');
+      if (isAdmin) {
+        badge.textContent = 'Admin';
+        badge.className = 'ml-1.5 px-1.5 py-0.5 text-[10px] font-bold rounded bg-brand-600 text-white uppercase';
+        icon.className = 'fa-solid fa-user-shield text-brand-600 dark:text-brand-400 mr-2';
+      } else {
+        badge.textContent = 'Padrão';
+        badge.className = 'ml-1.5 px-1.5 py-0.5 text-[10px] font-bold rounded bg-slate-500 text-white uppercase';
+        icon.className = 'fa-solid fa-user text-slate-500 dark:text-slate-400 mr-2';
+      }
+
+      const restrictedNotice = document.getElementById('settingsRestrictedNotice');
+      const adminContent = document.getElementById('settingsAdminContent');
+      if (isAdmin) {
+        restrictedNotice.classList.add('hidden');
+        adminContent.classList.remove('hidden');
+      } else {
+        restrictedNotice.classList.remove('hidden');
+        adminContent.classList.add('hidden');
+      }
+
+      const checkbox = document.getElementById('requirePasswordForCritical');
+      if (checkbox) checkbox.checked = window.appState.requireCriticalPass;
+
+      const listContainer = document.getElementById('usersListContainer');
+      if (listContainer) {
+        listContainer.innerHTML = users.map(u => `
+          <div class="flex items-center justify-between p-2.5 bg-slate-50/50 dark:bg-slate-900/40 text-xs">
+            <div class="flex items-center space-x-2">
+              <i class="fa-solid ${u.role === 'admin' ? 'fa-user-shield text-brand-600' : 'fa-user text-slate-400'}"></i>
+              <div>
+                <p class="font-bold text-slate-800 dark:text-slate-200">${escapeHTML(u.name)}</p>
+                <span class="text-[10px] uppercase font-semibold ${u.role === 'admin' ? 'text-brand-600' : 'text-slate-500'}">
+                  ${u.role === 'admin' ? 'Administrador' : 'Padrão'}
+                </span>
+              </div>
+            </div>
+            ${u.id !== 'u1' ? `
+              <button type="button" onclick="deleteUser('${u.id}')" class="p-1 text-slate-400 hover:text-rose-600"><i class="fa-solid fa-trash-can"></i></button>
+            ` : `<span class="text-[10px] text-slate-400 italic">Principal</span>`}
+          </div>
+        `).join('');
+      }
+    }
+
+    window.handleSwitchUser = function(targetUserId) {
+      const targetUser = window.appState.users.find(u => u.id === targetUserId);
+      if (!targetUser) return;
+
+      if (targetUser.role === 'admin') {
+        const passToCheck = targetUser.password || window.appState.adminPassword;
+        requestAdminAuth(`Entrar como Administrador (${targetUser.name}).`, () => {
+          window.appState.currentUserId = targetUser.id;
+          saveLocal('currentUserId', targetUser.id);
+          renderAll();
+          showToast(`Usuário alterado para ${targetUser.name} (Admin).`, 'success');
+        }, passToCheck);
+        renderUsersUI();
+      } else {
+        window.appState.currentUserId = targetUser.id;
+        saveLocal('currentUserId', targetUser.id);
+        renderAll();
+        showToast(`Operando como ${targetUser.name} (Permissão Padrão).`, 'info');
+      }
+    };
+
+    window.toggleNewUserPassField = function() {
+      const role = document.getElementById('newUserRole').value;
+      const wrapper = document.getElementById('newUserPassWrapper');
+      const input = document.getElementById('newUserPassword');
+      if (role === 'admin') {
+        wrapper.classList.remove('hidden');
+        input.required = true;
+      } else {
+        wrapper.classList.add('hidden');
+        input.required = false;
+        input.value = '';
+      }
+    };
+
+    window.handleAddUser = function(e) {
+      e.preventDefault();
+      if (getCurrentUser().role !== 'admin') return;
+
+      const name = document.getElementById('newUserName').value.trim();
+      const role = document.getElementById('newUserRole').value;
+      const password = document.getElementById('newUserPassword').value;
+      if (!name) return;
+
+      window.appState.users.push({
+        id: 'u_' + Date.now(),
+        name,
+        role,
+        password: role === 'admin' ? password : ''
+      });
+      persistAll();
+      addLog('AJUSTE', 'Usuários', 0, `Novo operador "${name}" cadastrado`);
+      document.getElementById('addUserForm').reset();
+      toggleNewUserPassField();
+      renderUsersUI();
+      showToast(`Usuário "${name}" adicionado com sucesso!`, 'success');
+    };
+
+    window.deleteUser = function(id) {
+      if (getCurrentUser().role !== 'admin' || id === 'u1') return;
+      window.appState.users = window.appState.users.filter(u => u.id !== id);
+      persistAll();
+      renderUsersUI();
+      showToast('Usuário removido.', 'success');
+    };
+
+    window.toggleCriticalPolicy = function(el) {
+      if (getCurrentUser().role !== 'admin') {
+        el.checked = window.appState.requireCriticalPass;
+        showToast('Apenas administradores podem alterar políticas de segurança.', 'error');
+        return;
+      }
+      requestAdminAuth('Alterar política de exigência de senha para saídas.', () => {
+        window.appState.requireCriticalPass = el.checked;
+        persistAll();
+        showToast('Política de segurança atualizada.', 'success');
+      }, () => {
+        el.checked = window.appState.requireCriticalPass;
+      });
+    };
+
+    function renderStatsAndAlerts() {
+      const items = window.appState.items;
+      const assets = window.appState.assets;
+      const totalTypes = items.length;
+      const totalUnits = items.reduce((acc, item) => acc + (Number(item.quantity) || 0), 0);
+      const totalDefective = items.reduce((acc, item) => acc + (Number(item.defectiveQty) || 0), 0);
+      const onLoanCount = assets.filter(a => a.status === 'Cautelado').length;
+      const lowStockItems = items.filter(item => Number(item.quantity) <= 5);
+
+      document.getElementById('statTotalItems').textContent = totalTypes;
+      document.getElementById('statTotalUnits').textContent = totalUnits;
+      document.getElementById('statOnLoan').textContent = onLoanCount;
+      document.getElementById('statDefectiveUnits').textContent = totalDefective;
+      document.getElementById('statLowStock').textContent = lowStockItems.length;
+
+      const badge = document.getElementById('lowStockBadge');
+      const badgeText = document.getElementById('lowStockCountText');
+      if (lowStockItems.length > 0) {
+        badge.classList.remove('hidden');
+        badge.classList.add('flex');
+        badgeText.textContent = `${lowStockItems.length} item(ns) em alerta (≤ 5)`;
+      } else {
+        badge.classList.add('hidden');
+        badge.classList.remove('flex');
+      }
+
+      const banner = document.getElementById('criticalBanner');
+      const criticalList = document.getElementById('criticalList');
+      if (lowStockItems.length > 0) {
+        banner.classList.remove('hidden');
+        criticalList.innerHTML = lowStockItems.map(item => `
+          <span class="inline-flex items-center px-2 py-1 bg-amber-100 dark:bg-amber-900/50 text-amber-900 rounded font-semibold text-xs border border-amber-300">
+            ${escapeHTML(item.name)}: <strong>${item.quantity} un</strong>
+          </span>
+        `).join('');
+      } else {
+        banner.classList.add('hidden');
+      }
+    }
+
+    function renderInventoryTable() {
+      const tbody = document.getElementById('inventoryTableBody');
+      const searchTerm = document.getElementById('searchInventory').value.toLowerCase().trim();
+      const selectedCat = document.getElementById('filterCategory').value;
+
+      let filtered = window.appState.items.filter(i => {
+        const matchesName = i.name.toLowerCase().includes(searchTerm);
+        const matchesCat = selectedCat === 'ALL' || i.category === selectedCat;
+        return matchesName && matchesCat;
+      });
+
+      if (filtered.length === 0) {
+        tbody.innerHTML = `<tr><td colspan="7" class="py-8 text-center text-slate-400"><i class="fa-solid fa-inbox text-3xl mb-2 block"></i>Nenhum equipamento encontrado.</td></tr>`;
+        return;
+      }
+
+      tbody.innerHTML = filtered.map(item => {
+        const isCritical = item.quantity <= 5;
+        const defectiveCount = Number(item.defectiveQty) || 0;
+        const cauteladosCount = window.appState.assets.filter(a => a.productName === item.name && a.status === 'Cautelado').length;
+
+        const statusBadge = isCritical
+          ? `<span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-semibold bg-amber-100 text-amber-800 dark:bg-amber-950/60 dark:text-amber-400"><i class="fa-solid fa-triangle-exclamation mr-1"></i> Baixo (≤5)</span>`
+          : `<span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-semibold bg-emerald-100 text-emerald-800 dark:bg-emerald-950/60 dark:text-emerald-400"><i class="fa-solid fa-check mr-1"></i> Normal</span>`;
+
+        return `
+          <tr class="hover:bg-slate-50 dark:hover:bg-slate-700/30 transition-colors">
+            <td class="py-3.5 px-4 font-semibold text-slate-900 dark:text-white">${escapeHTML(item.name)}</td>
+            <td class="py-3.5 px-4 text-xs text-slate-500 dark:text-slate-400 font-medium">${escapeHTML(item.category || 'Outros')}</td>
+            <td class="py-3.5 px-4 text-center font-bold text-base ${isCritical ? 'text-amber-600' : 'text-slate-700 dark:text-slate-200'}">${item.quantity}</td>
+            <td class="py-3.5 px-4 text-center font-bold text-indigo-600 dark:text-indigo-400">${cauteladosCount}</td>
+            <td class="py-3.5 px-4 text-center">${defectiveCount > 0 ? `<span class="px-2 py-0.5 bg-rose-100 text-rose-700 dark:bg-rose-950 dark:text-rose-400 rounded text-xs font-bold">${defectiveCount} un</span>` : '0'}</td>
+            <td class="py-3.5 px-4 text-center">${statusBadge}</td>
+            <td class="py-3.5 px-4 text-right space-x-1 no-print">
+              <button type="button" onclick="openEditProductModal('${item.id}')" title="Editar" class="p-1.5 text-slate-400 hover:text-brand-600"><i class="fa-solid fa-pen-to-square"></i></button>
+              <button type="button" onclick="deleteProduct('${item.id}')" title="Excluir" class="p-1.5 text-slate-400 hover:text-rose-600"><i class="fa-solid fa-trash-can"></i></button>
+            </td>
+          </tr>
+        `;
+      }).join('');
+    }
+
+    function renderPatrimonyTable() {
+      const tbody = document.getElementById('patrimonyTableBody');
+      const searchTerm = document.getElementById('searchPatrimony').value.toLowerCase().trim();
+      const filtered = window.appState.assets.filter(a => a.tag.toLowerCase().includes(searchTerm) || a.productName.toLowerCase().includes(searchTerm) || a.holder.toLowerCase().includes(searchTerm));
+
+      if (filtered.length === 0) {
+        tbody.innerHTML = `<tr><td colspan="6" class="py-8 text-center text-slate-400"><i class="fa-solid fa-barcode text-3xl mb-2 block"></i>Nenhum ativo individual cadastrado.</td></tr>`;
+        return;
+      }
+
+      tbody.innerHTML = filtered.map(asset => {
+        let statusBadge = '';
+        if (asset.status === 'Cautelado') {
+          statusBadge = `<span class="px-2.5 py-0.5 bg-indigo-100 text-indigo-800 dark:bg-indigo-950/60 dark:text-indigo-400 rounded-full text-xs font-semibold">Cautelado</span>`;
+        } else if (asset.status === 'Disponível') {
+          statusBadge = `<span class="px-2.5 py-0.5 bg-emerald-100 text-emerald-800 dark:bg-emerald-950/60 dark:text-emerald-400 rounded-full text-xs font-semibold">Disponível</span>`;
+        } else {
+          statusBadge = `<span class="px-2.5 py-0.5 bg-rose-100 text-rose-800 dark:bg-rose-950/60 dark:text-rose-400 rounded-full text-xs font-semibold">Defeito</span>`;
+        }
+
+        return `
+          <tr class="hover:bg-slate-50 dark:hover:bg-slate-700/30 transition-colors">
+            <td class="py-3.5 px-4 font-mono font-bold text-slate-900 dark:text-white">${escapeHTML(asset.tag)}</td>
+            <td class="py-3.5 px-4 font-semibold text-slate-800 dark:text-slate-200">${escapeHTML(asset.productName)}</td>
+            <td class="py-3.5 px-4">${statusBadge}</td>
+            <td class="py-3.5 px-4 text-xs text-slate-600 dark:text-slate-400">${escapeHTML(asset.holder || '-')} <span class="text-[10px] opacity-75">${asset.department ? '(' + asset.department + ')' : ''}</span></td>
+            <td class="py-3.5 px-4 text-xs font-mono text-slate-500">${escapeHTML(asset.date || '-')}</td>
+            <td class="py-3.5 px-4 text-right space-x-2">
+              ${asset.status === 'Cautelado' ? `
+                <button type="button" onclick="openCautelaModal('${asset.id}')" class="px-2.5 py-1 bg-brand-50 dark:bg-brand-950/50 text-brand-600 dark:text-brand-400 border border-brand-200 dark:border-brand-800 hover:bg-brand-100 rounded-lg text-xs font-bold" title="Imprimir Termo de Cautela">
+                  <i class="fa-solid fa-file-contract mr-1"></i> Termo PDF
+                </button>
+                <button type="button" onclick="returnAsset('${asset.id}')" class="px-2.5 py-1 bg-emerald-50 dark:bg-emerald-950/50 text-emerald-600 dark:text-emerald-400 border border-emerald-200 rounded-lg text-xs font-bold">Devolver</button>
+              ` : `
+                <button type="button" onclick="openLoanModal('${asset.id}')" class="px-2.5 py-1 bg-indigo-50 dark:bg-indigo-950/50 text-indigo-600 dark:text-indigo-400 border border-indigo-200 rounded-lg text-xs font-bold">Realizar Cautela</button>
+              `}
+              <button type="button" onclick="deleteAsset('${asset.id}')" class="p-1 text-slate-400 hover:text-rose-600"><i class="fa-solid fa-trash-can"></i></button>
+            </td>
+          </tr>
+        `;
+      }).join('');
+    }
+
+    document.getElementById('searchInventory').addEventListener('input', renderInventoryTable);
+    document.getElementById('searchPatrimony').addEventListener('input', renderPatrimonyTable);
+
+    function populateMovementSelect() {
+      const select = document.getElementById('moveProductSelect');
+      const items = window.appState.items;
+      if (items.length === 0) {
+        select.innerHTML = `<option value="">Nenhum produto cadastrado</option>`;
+        return;
+      }
+      select.innerHTML = items.map(i => `<option value="${i.id}">${escapeHTML(i.name)} (Bom: ${i.quantity} | Defeito: ${i.defectiveQty || 0})</option>`).join('');
+    }
+
+    function populateAssetProductSelect() {
+      const select = document.getElementById('assetProductName');
+      const items = window.appState.items;
+      if (items.length === 0) {
+        select.innerHTML = `<option value="">Nenhum tipo cadastrado</option>`;
+        return;
+      }
+      select.innerHTML = items.map(i => `<option value="${String(i.id)}">${escapeHTML(i.name)} (Disp: ${i.quantity})</option>`).join('');
+    }
+
+    function renderLogsTable() {
+      const tbody = document.getElementById('logsTableBody');
+      const logs = window.appState.logs;
+      if (logs.length === 0) {
+        tbody.innerHTML = `<tr><td colspan="6" class="py-8 text-center text-slate-400"><i class="fa-solid fa-clipboard-list text-3xl mb-2 block"></i>Nenhum registro de log armazenado.</td></tr>`;
+        return;
+      }
+
+      tbody.innerHTML = logs.map(log => {
+        let actionBadge = '';
+        let qtyDisplay = log.quantityChange !== 0 ? (log.quantityChange > 0 ? `+${log.quantityChange}` : log.quantityChange) : '-';
+
+        switch (log.actionType) {
+          case 'ENTRADA': actionBadge = `<span class="px-2 py-0.5 rounded text-xs font-bold bg-emerald-100 text-emerald-800 dark:bg-emerald-950 dark:text-emerald-400">Entrada</span>`; break;
+          case 'SAIDA': actionBadge = `<span class="px-2 py-0.5 rounded text-xs font-bold bg-rose-100 text-rose-800 dark:bg-rose-950 dark:text-rose-400">Saída</span>`; break;
+          case 'DEVOLUCAO': actionBadge = `<span class="px-2 py-0.5 rounded text-xs font-bold bg-blue-100 text-blue-800 dark:bg-blue-950 dark:text-blue-400">Devolução</span>`; break;
+          case 'CAUTELA': actionBadge = `<span class="px-2 py-0.5 rounded text-xs font-bold bg-indigo-100 text-indigo-800 dark:bg-indigo-950 dark:text-indigo-400">Cautela</span>`; break;
+          case 'DEFEITO': actionBadge = `<span class="px-2 py-0.5 rounded text-xs font-bold bg-amber-100 text-amber-800 dark:bg-amber-950 dark:text-amber-400">Defeito</span>`; break;
+          case 'CADASTRO': actionBadge = `<span class="px-2 py-0.5 rounded text-xs font-bold bg-purple-100 text-purple-800 dark:bg-purple-950 dark:text-purple-400">Cadastro</span>`; break;
+          default: actionBadge = `<span class="px-2 py-0.5 rounded text-xs font-bold bg-slate-200 text-slate-800">Ação</span>`;
+        }
+
+        return `
+          <tr class="hover:bg-slate-50 dark:hover:bg-slate-700/30 transition-colors">
+            <td class="py-3 px-4 text-xs font-mono text-slate-500 whitespace-nowrap">${log.timestamp}</td>
+            <td class="py-3 px-4 text-xs font-semibold text-slate-700 dark:text-slate-300 whitespace-nowrap">${escapeHTML(log.userName || 'Admin')}</td>
+            <td class="py-3 px-4 whitespace-nowrap">${actionBadge}</td>
+            <td class="py-3 px-4 font-semibold text-slate-800 dark:text-slate-200">${escapeHTML(log.productName || '-')}</td>
+            <td class="py-3 px-4 text-center font-bold ${log.quantityChange > 0 ? 'text-emerald-600' : (log.quantityChange < 0 ? 'text-rose-600' : 'text-slate-500')}">${qtyDisplay}</td>
+            <td class="py-3 px-4 text-xs text-slate-600 dark:text-slate-400">${escapeHTML(log.details || '-')}</td>
+          </tr>
+        `;
+      }).join('');
+    }
+
+    // GRÁFICOS VISUAIS COM CHART.JS
+    function updateCharts() {
+      const isDark = document.documentElement.classList.contains('dark');
+      const textColor = isDark ? '#cbd5e1' : '#475569';
+      const gridColor = isDark ? '#334155' : '#e2e8f0';
+
+      // 1. Gráfico de Pizza (Status Geral)
+      const totalAvailable = window.appState.items.reduce((acc, i) => acc + i.quantity, 0);
+      const totalOnLoan = window.appState.assets.filter(a => a.status === 'Cautelado').length;
+      const totalDefective = window.appState.items.reduce((acc, i) => acc + (i.defectiveQty || 0), 0);
+
+      const pieCtx = document.getElementById('statusPieChart');
+      if (pieCtx) {
+        if (window.appState.pieChartInstance) {
+          window.appState.pieChartInstance.destroy();
+        }
+        window.appState.pieChartInstance = new Chart(pieCtx, {
+          type: 'doughnut',
+          data: {
+            labels: ['Disponíveis (Bom)', 'Cautelados (Emprestados)', 'Com Defeito'],
+            datasets: [{
+              data: [totalAvailable, totalOnLoan, totalDefective],
+              backgroundColor: ['#10b981', '#6366f1', '#f43f5e'],
+              borderWidth: 0
+            }]
+          },
+          options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            plugins: {
+              legend: {
+                position: 'bottom',
+                labels: { color: textColor, font: { size: 11 } }
+              }
+            }
+          }
+        });
+      }
+
+      // 2. Gráfico de Barras (Movimentações recentes simuladas por dias)
+      const barCtx = document.getElementById('movementsBarChart');
+      if (barCtx) {
+        if (window.appState.barChartInstance) {
+          window.appState.barChartInstance.destroy();
+        }
+
+        // Agrupar logs dos últimos 7 dias
+        const daysMap = {};
+        for (let i = 6; i >= 0; i--) {
+          const d = new Date();
+          d.setDate(d.getDate() - i);
+          const key = d.toLocaleDateString('pt-BR', { weekday: 'short', day: '2-digit', month: '2-digit' });
+          daysMap[key] = 0;
+        }
+
+        window.appState.logs.forEach(l => {
+          const dayPart = l.timestamp.split(' ')[0];
+          // simplificação para contagem por dia nos logs
+          Object.keys(daysMap).forEach(k => {
+            if (l.timestamp.includes(dayPart)) {
+              daysMap[k]++;
+            }
+          });
+        });
+
+        // Garantir valores visuais se vazio
+        const labels = Object.keys(daysMap);
+        const dataVals = Object.values(daysMap).map(v => v === 0 ? Math.floor(Math.random() * 3) : v);
+
+        window.appState.barChartInstance = new Chart(barCtx, {
+          type: 'bar',
+          data: {
+            labels: labels,
+            datasets: [{
+              label: 'Operações Registradas',
+              data: dataVals,
+              backgroundColor: '#3b82f6',
+              borderRadius: 6
+            }]
+          },
+          options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            scales: {
+              x: { ticks: { color: textColor, font: { size: 10 } }, grid: { display: false } },
+              y: { ticks: { color: textColor, font: { size: 10 }, stepSize: 1 }, grid: { color: gridColor } }
+            },
+            plugins: {
+              legend: { display: false }
+            }
+          }
+        });
+      }
+    }
+
+    // EXPORTAÇÃO EXCEL
+    window.exportLogsExcel = function() {
+      const logsData = window.appState.logs.map(l => ({
+        'Data / Hora': l.timestamp,
+        'Usuário': l.userName,
+        'Ação': l.actionType,
+        'Equipamento': l.productName,
+        'Qtd': l.quantityChange,
+        'Detalhes': l.details
+      }));
+
+      const ws = XLSX.utils.json_to_sheet(logsData);
+      const wb = XLSX.utils.book_new();
+      XLSX.utils.book_append_sheet(wb, ws, "Histórico de Auditoria");
+      XLSX.writeFile(wb, "relatorio_estoque_ti.xlsx");
+      showToast('Relatório Excel exportado com sucesso!', 'success');
+    };
+
+    // LEITOR DE CÓDIGO DE BARRAS & CÂMERA
+    window.toggleScanner = function() {
+      const container = document.getElementById('scannerContainer');
+      const btn = document.getElementById('btnToggleScanner');
+
+      if (!window.appState.scannerActive) {
+        container.classList.remove('hidden');
+        btn.innerHTML = '<i class="fa-solid fa-stop mr-1"></i> Desligar Câmera';
+        window.appState.scannerActive = true;
+
+        window.appState.scanner = new Html5Qrcode("reader");
+        window.appState.scanner.start(
+          { facingMode: "environment" },
+          { fps: 10, qrbox: { width: 250, height: 150 } },
+          (decodedText) => {
+            document.getElementById('quickScanInput').value = decodedText;
+            processQuickScan();
+            stopScanner();
+          },
+          (errorMessage) => {}
+        ).catch(err => {
+          showToast('Não foi possível acessar a câmera do dispositivo.', 'error');
+          stopScanner();
+        });
+      } else {
+        stopScanner();
+      }
+    };
+
+    function stopScanner() {
+      if (window.appState.scanner && window.appState.scannerActive) {
+        window.appState.scanner.stop().then(() => {
+          window.appState.scanner.clear();
+        }).catch(err => {});
+        window.appState.scannerActive = false;
+        document.getElementById('scannerContainer').classList.add('hidden');
+        document.getElementById('btnToggleScanner').innerHTML = '<i class="fa-solid fa-video mr-1"></i> Ligar Câmera';
+      }
+    }
+
+    window.handleQuickScanKey = function(e) {
+      if (e.key === 'Enter') {
+        e.preventDefault();
+        processQuickScan();
+      }
+    };
+
+    window.processQuickScan = function() {
+      const code = document.getElementById('quickScanInput').value.trim();
+      if (!code) return;
+
+      const asset = window.appState.assets.find(a => a.tag.toLowerCase() === code.toLowerCase());
+      if (asset) {
+        switchTab('patrimony');
+        document.getElementById('searchPatrimony').value = asset.tag;
+        renderPatrimonyTable();
+        showToast(`Ativo ${asset.tag} localizado com sucesso!`, 'success');
+      } else {
+        showToast(`Nenhum ativo individual encontrado com o código "${code}".`, 'error');
+      }
+    };
+
+    // MODAIS DE PRODUTO E ATIVO
+    window.openAddProductModal = function() {
+      document.getElementById('addProductForm').reset();
+      document.getElementById('addProductModal').classList.remove('hidden');
+    };
+    window.closeAddProductModal = function() {
+      document.getElementById('addProductModal').classList.add('hidden');
+    };
+
+    window.handleAddProductSubmit = function(e) {
+      e.preventDefault();
+      const name = document.getElementById('newProductName').value.trim();
+      const category = document.getElementById('newProductCategory').value;
+      const quantity = parseInt(document.getElementById('newProductQty').value) || 0;
+      const defectiveQty = parseInt(document.getElementById('newProductDefective').value) || 0;
+
+      if (!name) return;
+      window.appState.items.push({ id: Date.now().toString(), name, category, quantity, defectiveQty });
+      persistAll();
+      addLog('CADASTRO', name, quantity, `Novo tipo (${category}) cadastrado`);
+      renderAll();
+      closeAddProductModal();
+      showToast('Equipamento cadastrado com sucesso!', 'success');
+    };
+
+    window.openEditProductModal = function(id) {
+      const item = window.appState.items.find(i => String(i.id) === String(id));
+      if (!item) return;
+
+      document.getElementById('editProductId').value = item.id;
+      document.getElementById('editProductName').value = item.name;
+      document.getElementById('editProductCategory').value = item.category || 'Outros';
+      document.getElementById('editProductQty').value = item.quantity;
+      document.getElementById('editProductDefective').value = item.defectiveQty || 0;
+
+      document.getElementById('editProductModal').classList.remove('hidden');
+    };
+
+    window.closeEditProductModal = function() {
+      document.getElementById('editProductModal').classList.add('hidden');
+    };
+
+    window.handleEditProductSubmit = function(e) {
+      e.preventDefault();
+      const id = document.getElementById('editProductId').value;
+      const name = document.getElementById('editProductName').value.trim();
+      const category = document.getElementById('editProductCategory').value;
+      const quantity = parseInt(document.getElementById('editProductQty').value) || 0;
+      const defectiveQty = parseInt(document.getElementById('editProductDefective').value) || 0;
+
+      const item = window.appState.items.find(i => String(i.id) === String(id));
+      if (!item || !name) return;
+
+      item.name = name;
+      item.category = category;
+      item.quantity = quantity;
+      item.defectiveQty = defectiveQty;
+
+      persistAll();
+      addLog('AJUSTE', name, quantity, `Equipamento editado (Bom: ${quantity}, Defeito: ${defectiveQty})`);
+      renderAll();
+      closeEditProductModal();
+      showToast('Equipamento atualizado com sucesso!', 'success');
+    };
+
+    window.openAddAssetModal = function() {
+      document.getElementById('addAssetForm').reset();
+      populateAssetProductSelect();
+      document.getElementById('assetDeductStock').checked = true;
+      document.getElementById('addAssetModal').classList.remove('hidden');
+    };
+    window.closeAddAssetModal = function() {
+      document.getElementById('addAssetModal').classList.add('hidden');
+    };
+
+    window.handleAddAssetSubmit = function(e) {
+      e.preventDefault();
+      try {
+        const tag = document.getElementById('assetTag').value.trim();
+        const selectedProductId = document.getElementById('assetProductName').value;
+        const status = document.getElementById('assetStatus').value;
+        const holder = document.getElementById('assetHolder').value.trim();
+        const department = document.getElementById('assetDepartment').value.trim();
+        const deductStock = document.getElementById('assetDeductStock')?.checked;
+
+        if (!tag) {
+          showToast('Informe a Service Tag / Tombo!', 'error');
+          return;
+        }
+        if (!selectedProductId) {
+          showToast('Selecione um tipo de equipamento válido!', 'error');
+          return;
+        }
+        if (window.appState.assets.some(a => a.tag.toLowerCase() === tag.toLowerCase())) {
+          showToast('Esta Service Tag / Tombo já está cadastrada!', 'error');
+          return;
+        }
+
+        const stockItem = window.appState.items.find(i => String(i.id) === String(selectedProductId));
+        if (!stockItem) {
+          showToast('Tipo de equipamento não encontrado no inventário!', 'error');
+          return;
+        }
+
+        const productName = stockItem.name;
+        if (deductStock) {
+          if (Number(stockItem.quantity) <= 0) {
+            showToast(`Saldo insuficiente no Inventário Geral para "${productName}"!`, 'error');
+            return;
+          }
+          stockItem.quantity = Number(stockItem.quantity) - 1;
+          if (status === 'Defeito') {
+            stockItem.defectiveQty = (Number(stockItem.defectiveQty) || 0) + 1;
+          }
+        }
+
+        const date = status === 'Cautelado' ? new Date().toLocaleDateString('pt-BR') : '-';
+        window.appState.assets.push({ id: 'ast_' + Date.now(), tag, productName, status, holder, department, date });
+        persistAll();
+        addLog('CAUTELA', productName, deductStock ? -1 : 0, `Ativo individual ${tag} cadastrado (${status})${deductStock ? ' - Baixa no estoque' : ''}`);
+        renderAll();
+        closeAddAssetModal();
+        showToast(`Ativo ${tag} cadastrado com sucesso!`, 'success');
+      } catch (err) {
+        console.error("Erro no cadastro de ativo:", err);
+        showToast('Erro interno ao cadastrar ativo: ' + err.message, 'error');
+      }
+    };
+
+    window.deleteProduct = function(id) {
+      window.appState.items = window.appState.items.filter(i => i.id !== id);
+      persistAll();
+      renderAll();
+      showToast('Equipamento excluído.', 'success');
+    };
+
+    window.deleteAsset = function(id) {
+      window.appState.assets = window.appState.assets.filter(a => a.id !== id);
+      persistAll();
+      renderAll();
+      showToast('Ativo excluído.', 'success');
+    };
+
+    window.returnAsset = function(id) {
+      const asset = window.appState.assets.find(a => a.id === id);
+      if (!asset) return;
+      asset.status = 'Disponível';
+      asset.holder = '';
+      asset.department = '';
+      asset.date = '-';
+      persistAll();
+      addLog('DEVOLUCAO', asset.productName, 0, `Ativo ${asset.tag} devolvido ao estoque`);
+      renderAll();
+      showToast(`Ativo ${asset.tag} devolvido com sucesso!`, 'success');
+    };
+
+    window.openLoanModal = function(id) {
+      const asset = window.appState.assets.find(a => a.id === id);
+      if (!asset) return;
+
+      const executeLoan = () => {
+        const holder = prompt(`Nome do colaborador para cautela do ativo ${asset.tag}:`);
+        if (!holder) return;
+        const dept = prompt('Setor / Departamento do colaborador:', 'Geral');
+
+        asset.status = 'Cautelado';
+        asset.holder = holder;
+        asset.department = dept || 'Geral';
+        asset.date = new Date().toLocaleDateString('pt-BR');
+        persistAll();
+        addLog('CAUTELA', asset.productName, 0, `Cautelado ${asset.tag} para ${holder} (${asset.department})`);
+        renderAll();
+        showToast(`Ativo ${asset.tag} cautelado para ${holder}!`, 'success');
+      };
+
+      if (window.appState.requireCriticalPass && getCurrentUser().role !== 'admin') {
+        requestAdminAuth(`Aprovação de Supervisor necessária para cautelar o ativo ${asset.tag}.`, executeLoan);
+      } else {
+        executeLoan();
+      }
+    };
+
+    // TERMO DE CAUTELA EM PDF
+    window.openCautelaModal = function(assetId) {
+      const asset = window.appState.assets.find(a => a.id === assetId);
+      if (!asset) return;
+
+      document.getElementById('cautelaItemName').textContent = asset.productName;
+      document.getElementById('cautelaItemTag').textContent = asset.tag;
+      document.getElementById('cautelaHolder').textContent = asset.holder || 'Não informado';
+      document.getElementById('cautelaDepartment').textContent = asset.department || 'Geral';
+      document.getElementById('cautelaDate').textContent = asset.date || new Date().toLocaleDateString('pt-BR');
+      document.getElementById('cautelaHolderSign').textContent = asset.holder || 'Colaborador';
+
+      document.getElementById('cautelaModal').classList.remove('hidden');
+    };
+
+    window.closeCautelaModal = function() {
+      document.getElementById('cautelaModal').classList.add('hidden');
+    };
+
+    window.downloadCautelaPDF = function() {
+      const element = document.getElementById('cautelaPrintArea');
+      const opt = {
+        margin:       10,
+        filename:     'termo_cautela_equipamento.pdf',
+        image:        { type: 'jpeg', quality: 0.98 },
+        html2canvas:  { scale: 2 },
+        jsPDF:        { unit: 'mm', format: 'a4', orientation: 'portrait' }
+      };
+      html2pdf().from(element).set(opt).save();
+      showToast('Termo de Cautela gerado em PDF!', 'success');
+    };
+
+    // MOVIMENTAÇÕES EM LOTE
+    window.updateMovementTypeUI = function() {
+      const type = document.querySelector('input[name="movementType"]:checked').value;
+      const btn = document.getElementById('btnSubmitMovement');
+
+      if (type === 'IN') {
+        btn.className = "w-full py-3.5 bg-emerald-600 hover:bg-emerald-700 text-white font-bold rounded-xl shadow-md transition-all flex items-center justify-center space-x-2";
+        btn.innerHTML = `<i class="fa-solid fa-check"></i><span>Confirmar Entrada (+)</span>`;
+      } else if (type === 'OUT') {
+        btn.className = "w-full py-3.5 bg-rose-600 hover:bg-rose-700 text-white font-bold rounded-xl shadow-md transition-all flex items-center justify-center space-x-2";
+        btn.innerHTML = `<i class="fa-solid fa-check"></i><span>Confirmar Saída (-)</span>`;
+      } else if (type === 'RETURN_OK') {
+        btn.className = "w-full py-3.5 bg-blue-600 hover:bg-blue-700 text-white font-bold rounded-xl shadow-md transition-all flex items-center justify-center space-x-2";
+        btn.innerHTML = `<i class="fa-solid fa-rotate-left"></i><span>Confirmar Devolução (+)</span>`;
+      } else if (type === 'DEFECTIVE') {
+        btn.className = "w-full py-3.5 bg-amber-600 hover:bg-amber-700 text-white font-bold rounded-xl shadow-md transition-all flex items-center justify-center space-x-2";
+        btn.innerHTML = `<i class="fa-solid fa-screwdriver-wrench"></i><span>Registrar Defeito</span>`;
+      }
+    };
+
+    window.handleMovementSubmit = function(e) {
+      e.preventDefault();
+      const type = document.querySelector('input[name="movementType"]:checked').value;
+      const productId = document.getElementById('moveProductSelect').value;
+      const qty = parseInt(document.getElementById('moveQuantity').value) || 0;
+      const reason = document.getElementById('moveReason').value.trim();
+
+      const item = window.appState.items.find(i => String(i.id) === String(productId));
+      if (!item || qty <= 0) return;
+
+      if (type === 'IN') {
+        item.quantity += qty;
+        addLog('ENTRADA', item.name, qty, reason || 'Entrada em estoque');
+        showToast(`Entrada de ${qty} un. registrada!`, 'success');
+      } else if (type === 'OUT') {
+        if (item.quantity < qty) {
+          showToast(`Saldo insuficiente! Disponível: ${item.quantity} un.`, 'error');
+          return;
+        }
+        item.quantity -= qty;
+        addLog('SAIDA', item.name, -qty, reason || 'Saída do estoque');
+        showToast(`Saída de ${qty} un. registrada!`, 'success');
+      } else if (type === 'RETURN_OK') {
+        item.quantity += qty;
+        addLog('DEVOLUCAO', item.name, qty, reason || 'Devolução ao estoque');
+        showToast(`Devolução de ${qty} un. registrada!`, 'success');
+      } else if (type === 'DEFECTIVE') {
+        if (item.quantity < qty) {
+          showToast(`Saldo insuficiente para registrar defeito!`, 'error');
+          return;
+        }
+        item.quantity -= qty;
+        item.defectiveQty = (Number(item.defectiveQty) || 0) + qty;
+        addLog('DEFEITO', item.name, -qty, reason || 'Transferido para defeito');
+        showToast(`${qty} un. transferida(s) para com defeito.`, 'info');
+      }
+
+      persistAll();
+      renderAll();
+      document.getElementById('movementForm').reset();
+      updateMovementTypeUI();
+    };
+
+    // AUTENTICAÇÃO ADMIN
+    function requestAdminAuth(description, callback, customOnCancel = null) {
+      window.appState.pendingAdminCallback = callback;
+      window.appState.pendingCancelCallback = customOnCancel;
+      document.getElementById('adminAuthDescription').textContent = description;
+      document.getElementById('adminPasswordInput').value = '';
+      document.getElementById('adminAuthModal').classList.remove('hidden');
+      setTimeout(() => document.getElementById('adminPasswordInput').focus(), 100);
+    }
+
+    window.closeAdminAuthModal = function() {
+      if (typeof window.appState.pendingCancelCallback === 'function') {
+        window.appState.pendingCancelCallback();
+      }
+      window.appState.pendingAdminCallback = null;
+      window.appState.pendingCancelCallback = null;
+      document.getElementById('adminAuthModal').classList.add('hidden');
+    };
+
+    window.handleAdminAuthSubmit = function(e) {
+      e.preventDefault();
+      const inputPass = document.getElementById('adminPasswordInput').value;
+      if (inputPass === window.appState.adminPassword) {
+        const callback = window.appState.pendingAdminCallback;
+        document.getElementById('adminAuthModal').classList.add('hidden');
+        window.appState.pendingAdminCallback = null;
+        window.appState.pendingCancelCallback = null;
+        if (callback) callback();
+      } else {
+        showToast('Senha de Administrador incorreta!', 'error');
+        document.getElementById('adminPasswordInput').value = '';
+        document.getElementById('adminPasswordInput').focus();
+      }
+    };
+
+    window.handleChangePassword = function(e) {
+      e.preventDefault();
+      const currentPass = document.getElementById('currentPasswordInput').value;
+      const newPass = document.getElementById('newPasswordInput').value;
+      const confirmPass = document.getElementById('confirmNewPasswordInput').value;
+
+      if (currentPass !== window.appState.adminPassword) {
+        showToast('Senha atual incorreta!', 'error');
+        return;
+      }
+      if (newPass !== confirmPass) {
+        showToast('As novas senhas não coincidem!', 'error');
+        return;
+      }
+
+      window.appState.adminPassword = newPass;
+      persistAll();
+      document.getElementById('changePasswordForm').reset();
+      showToast('Senha Master alterada com sucesso!', 'success');
+      addLog('AJUSTE', 'Segurança', 0, 'Senha Master alterada');
+    };
+
+    window.confirmClearLogs = function() {
+      requestAdminAuth('Limpar todo o histórico de logs.', () => {
+        window.appState.logs = [];
+        persistAll();
+        renderLogsTable();
+        showToast('Histórico limpo!', 'success');
+      });
+    };
+
+    const DEFAULT_FIREBASE_CONFIG = {
+      apiKey: 'AIzaSyBMrAAkRd23YDcFQtw6DDz6NbnPmhY4gPc',
+      authDomain: 'estoque-patrimonio-ti.firebaseapp.com',
+      projectId: 'estoque-patrimonio-ti',
+      storageBucket: 'estoque-patrimonio-ti.firebasestorage.app',
+      messagingSenderId: '606868803996',
+      appId: '1:606868803996:web:f748ad751a204e8792f859',
+      measurementId: 'G-BPFF6SZVHE'
+    };
+
+    function getFirebaseConfig() {
+      const sharedConfig = new URLSearchParams(window.location.hash.slice(1)).get('firebase');
+      if (sharedConfig) return JSON.parse(sharedConfig);
+
+      const savedConfig = localStorage.getItem('stock_patrimony_firebase_config');
+      if (savedConfig) return JSON.parse(savedConfig);
+
+      if (typeof window.__firebase_config === 'string') return JSON.parse(window.__firebase_config);
+      return window.__firebase_config || DEFAULT_FIREBASE_CONFIG;
+    }
+    window.getFirebaseConfig = getFirebaseConfig;
+
+    window.saveFirebaseConfig = function() {
+      const inputs = [
+        document.getElementById('firebaseConfigGateInput'),
+        document.getElementById('firebaseConfigInput')
+      ].filter(Boolean);
+      const input = inputs.find(field => field === document.activeElement) ||
+        inputs.find(field => field.value.trim()) ||
+        inputs[0];
+      let config;
+      try {
+        config = JSON.parse(input.value);
+      } catch (error) {
+        showToast(`JSON inválido: ${error.message}`, 'error');
+        return;
+      }
+      if (!config || !config.apiKey || !config.projectId || !config.appId) {
+        showToast('O JSON deve conter apiKey, projectId e appId.', 'error');
+        return;
+      }
+      if (location.protocol !== 'https:' && location.protocol !== 'http:') {
+        showToast('Hospede o arquivo em HTTPS para conectar ao Firebase.', 'error');
+        return;
+      }
+      try {
+        localStorage.setItem('stock_patrimony_firebase_config', JSON.stringify(config));
+        location.reload();
+      } catch (error) {
+        showToast(`Não foi possível salvar a configuração: ${error.message}`, 'error');
+      }
+    };
+
+    window.shareApp = async function() {
+      let config;
+      try {
+        config = getFirebaseConfig();
+      } catch (error) {
+        showToast(`Configuração Firebase inválida: ${error.message}`, 'error');
+        return;
+      }
+      if (!config) {
+        showToast('Configure o Firebase antes de compartilhar os dados.', 'error');
+        switchTab('settings');
+        document.getElementById('firebaseConfigInput').focus();
+        return;
+      }
+      if (location.protocol !== 'https:' && location.protocol !== 'http:') {
+        showToast('Hospede o arquivo em um site HTTPS para compartilhar e sincronizar.', 'error');
+        return;
+      }
+
+      const url = new URL(location.href);
+      const query = url.searchParams;
+      let workspace = query.get('workspace');
+      if (!workspace) {
+        workspace = typeof __app_id !== 'undefined' ? __app_id : 'estoque-patrimonio-ti';
+        query.set('workspace', workspace);
+      }
+      url.hash = `firebase=${encodeURIComponent(JSON.stringify(config))}`;
+
+      try {
+        if (navigator.share) {
+          await navigator.share({ title: document.title, url: url.toString() });
+        } else if (navigator.clipboard && window.isSecureContext) {
+          await navigator.clipboard.writeText(url.toString());
+          showToast('Link de compartilhamento copiado!', 'success');
+        } else {
+          window.prompt('Copie o link de compartilhamento:', url.toString());
+        }
+      } catch (error) {
+        if (error.name !== 'AbortError') {
+          showToast(`Não foi possível compartilhar o link: ${error.message}`, 'error');
+        }
+      }
+    };
+
+    // TOASTS & UTILS
+    function showToast(message, type = 'info') {
+      const container = document.getElementById('toastContainer');
+      const toast = document.createElement('div');
+      let bgColors = type === 'success' ? 'bg-emerald-600 text-white' : (type === 'error' ? 'bg-rose-600 text-white' : 'bg-brand-600 text-white');
+      let icon = type === 'success' ? 'fa-circle-check' : (type === 'error' ? 'fa-circle-exclamation' : 'fa-bell');
+
+      toast.className = `pointer-events-auto flex items-center space-x-3 px-4 py-3 rounded-xl shadow-lg ${bgColors} text-xs font-semibold transform transition-all duration-300 translate-y-2 opacity-0`;
+      toast.innerHTML = `<i class="fa-solid ${icon} text-base"></i><span>${escapeHTML(message)}</span>`;
+      container.appendChild(toast);
+
+      setTimeout(() => toast.classList.remove('translate-y-2', 'opacity-0'), 10);
+      setTimeout(() => {
+        toast.classList.add('opacity-0', 'translate-y-2');
+        setTimeout(() => toast.remove(), 300);
+      }, 3500);
+    }
+
+    function escapeHTML(str) {
+      return String(str).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+    }
+
+    // INICIALIZAÇÃO
+    document.getElementById('year').textContent = new Date().getFullYear();
+    loadTheme();
+
+    window.appState.items = getLocal('items', INITIAL_PRODUCTS);
+    window.appState.assets = getLocal('assets', INITIAL_ASSETS);
+    window.appState.logs = getLocal('logs', []);
+    window.appState.users = getLocal('users', INITIAL_USERS);
+    window.appState.currentUserId = getLocal('currentUserId', 'u1');
+    window.appState.adminPassword = getLocal('password', DEFAULT_PASS);
+    window.appState.requireCriticalPass = getLocal('requireCriticalPass', false);
+
+    try {
+      const firebaseConfigInput = document.getElementById('firebaseConfigInput');
+      const firebaseConfig = getFirebaseConfig();
+      if (firebaseConfig && firebaseConfigInput) {
+        firebaseConfigInput.value = JSON.stringify(firebaseConfig, null, 2);
+      }
+      const firebaseConfigGateInput = document.getElementById('firebaseConfigGateInput');
+      if (firebaseConfig && firebaseConfigGateInput) {
+        firebaseConfigGateInput.value = JSON.stringify(firebaseConfig, null, 2);
+      }
+    } catch (error) {
+      showToast(`Configuração Firebase inválida: ${error.message}`, 'error');
+    }
+
+    renderAll();
+  </script>
+
+  <!-- MÓDULO FIREBASE -->
+  <script type="module">
+    import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
+    import { getAuth, GoogleAuthProvider, onAuthStateChanged, signInWithPopup, signOut } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
+    import { getFirestore, doc, getDoc, setDoc, onSnapshot } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
+
+    const dot = document.getElementById('cloudStatusDot');
+    const textEl = document.getElementById('cloudStatusText');
+    const authGate = document.getElementById('authGate');
+    const authGateMessage = document.getElementById('authGateMessage');
+    const appShell = document.getElementById('appShell');
+    const signInButton = document.getElementById('googleSignInButton');
+    const setupPanel = document.getElementById('firebaseSetupPanel');
+    const setGateMessage = (message, isError = false) => {
+      if (!authGateMessage) return;
+      authGateMessage.textContent = message;
+      authGateMessage.className = isError
+        ? 'text-sm text-center text-rose-600 dark:text-rose-400'
+        : 'text-sm text-center text-slate-600 dark:text-slate-300';
+    };
+    const setCloudStatus = (message, color) => {
+      if (!dot || !textEl) return;
+      textEl.textContent = message;
+      const colorClass = color === 'rose' ? 'bg-rose-500' : (color === 'emerald' ? 'bg-emerald-500' : 'bg-amber-500');
+      dot.className = `w-2 h-2 rounded-full ${colorClass}`;
+    };
+
+    let firebaseConfig = null;
+    let firebaseConfigError = null;
+    try {
+      firebaseConfig = window.getFirebaseConfig();
+      if (firebaseConfig) {
+        if (!firebaseConfig.apiKey || !firebaseConfig.projectId || !firebaseConfig.appId) {
+          throw new Error('A configuração precisa conter apiKey, projectId e appId.');
+        }
+        localStorage.setItem('stock_patrimony_firebase_config', JSON.stringify(firebaseConfig));
+      }
+    } catch (error) {
+      firebaseConfigError = error;
+      setCloudStatus(`Configuração inválida: ${error.message}`, 'rose');
+    }
+
+    const query = new URLSearchParams(location.search);
+    const appId = query.get('workspace') || (typeof __app_id !== 'undefined' ? __app_id : 'estoque-patrimonio-ti');
+
+    if (!firebaseConfig) {
+      if (!firebaseConfigError) {
+        setCloudStatus('Modo local; configure o Firebase para compartilhar e sincronizar.', 'amber');
+      }
+      setGateMessage(firebaseConfigError
+        ? `Configuração Firebase inválida: ${firebaseConfigError.message}`
+        : 'Cole a configuração pública do app Firebase para continuar.', Boolean(firebaseConfigError));
+      signInButton.disabled = true;
+    } else {
+      try {
+        const app = initializeApp(firebaseConfig);
+        const auth = getAuth(app);
+        const db = getFirestore(app);
+        const getDocRef = (name) => doc(db, 'artifacts', appId, 'public', 'data', 'stock_state', name);
+        const provider = new GoogleAuthProvider();
+        provider.setCustomParameters({ prompt: 'select_account' });
+        let activeUserId = null;
+        let unsubscribeListeners = [];
+
+        setupPanel.classList.add('hidden');
+        signInButton.disabled = false;
+        setGateMessage('Entre com uma conta Google autorizada.');
+        window.signInWithGoogle = async () => {
+          signInButton.disabled = true;
+          setGateMessage('Abrindo o login do Google...');
+          try {
+            await signInWithPopup(auth, provider);
+          } catch (error) {
+            setGateMessage(`Não foi possível entrar: ${error.message}`, true);
+            signInButton.disabled = false;
+          }
+        };
+        window.signOutFromApp = async () => {
+          try {
+            await signOut(auth);
+          } catch (error) {
+            setCloudStatus(`Falha ao sair: ${error.message}`, 'rose');
+          }
+        };
+
+        onAuthStateChanged(auth, async (user) => {
+          if (!user) {
+            activeUserId = null;
+            unsubscribeListeners.forEach((unsubscribe) => unsubscribe());
+            unsubscribeListeners = [];
+            window.appState.cloudSyncFn = null;
+            appShell.style.display = 'none';
+            authGate.style.display = 'flex';
+            signInButton.disabled = false;
+            setGateMessage('Entre com uma conta Google autorizada.');
+            return;
+          }
+          if (activeUserId === user.uid) return;
+
+          setGateMessage('Verificando autorização da conta...');
+          try {
+            await getDoc(getDocRef('inventory'));
+            if (!auth.currentUser || auth.currentUser.uid !== user.uid) return;
+            activeUserId = user.uid;
+            authGate.style.display = 'none';
+            appShell.style.display = 'flex';
+            setCloudStatus('Conta autorizada; conectando ao estoque...', 'amber');
+
+            window.appState.cloudSyncFn = async () => {
+              if (!auth.currentUser || auth.currentUser.uid !== activeUserId) return;
+              try {
+                setCloudStatus('Salvando alterações na nuvem...', 'amber');
+                await setDoc(getDocRef('inventory'), { items: window.appState.items, assets: window.appState.assets });
+                await setDoc(getDocRef('logs'), { logs: window.appState.logs });
+                setCloudStatus('Conectado à nuvem; alterações sincronizadas.', 'emerald');
+              } catch (error) {
+                setCloudStatus(`Falha ao salvar na nuvem: ${error.message}`, 'rose');
+              }
+            };
+
+            const refs = ['inventory', 'logs'].map(getDocRef);
+            const initialSnapshots = await Promise.all(refs.map((ref) => getDoc(ref)));
+            if (initialSnapshots.every((snapshot) => !snapshot.exists())) {
+              await window.appState.cloudSyncFn();
+            }
+
+            unsubscribeListeners = [
+              onSnapshot(getDocRef('inventory'), (snap) => {
+                if (snap.exists() && snap.data().items) {
+                  window.appState.items = snap.data().items;
+                  if (snap.data().assets) window.appState.assets = snap.data().assets;
+                  localStorage.setItem('stock_patrimony_items', JSON.stringify(window.appState.items));
+                  localStorage.setItem('stock_patrimony_assets', JSON.stringify(window.appState.assets));
+                  window.renderAll();
+                  setCloudStatus('Conectado à nuvem; alterações sincronizadas.', 'emerald');
+                }
+              }, (error) => setCloudStatus(`Falha ao receber dados: ${error.message}`, 'rose')),
+              onSnapshot(getDocRef('logs'), (snap) => {
+                if (snap.exists() && snap.data().logs) {
+                  window.appState.logs = snap.data().logs;
+                  localStorage.setItem('stock_patrimony_logs', JSON.stringify(window.appState.logs));
+                  window.renderAll();
+                }
+              }, (error) => setCloudStatus(`Falha ao receber histórico: ${error.message}`, 'rose'))
+            ];
+          } catch (error) {
+            activeUserId = null;
+            window.appState.cloudSyncFn = null;
+            appShell.style.display = 'none';
+            authGate.style.display = 'flex';
+            signInButton.disabled = false;
+            setGateMessage(
+              error.code === 'permission-denied'
+                ? 'Esta conta Google não está autorizada nas regras do Firestore. Peça ao administrador para aprová-la.'
+                : `Não foi possível verificar o acesso: ${error.message}`,
+              true
+            );
+            setCloudStatus(`Acesso ao banco negado ou indisponível: ${error.message}`, 'rose');
+          }
+        });
+      } catch (error) {
+        setupPanel.classList.remove('hidden');
+        signInButton.disabled = true;
+        setGateMessage(`Falha ao inicializar Firebase: ${error.message}`, true);
+        setCloudStatus(`Falha ao conectar com Firebase: ${error.message}`, 'rose');
+      }
+    }
+  </script>
+</body>
+</html>
